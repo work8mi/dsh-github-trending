@@ -36,7 +36,7 @@ export const CSS = `
 .dshgt-row>label.dshgt-label{width:96px;color:var(--gt-muted);flex:none;font-size:12px;display:flex;align-items:flex-start;gap:5px;}
 .dshgt-label-text{flex:1;min-width:0;}
 /* 字段说明：圆问号 + 纯 CSS 悬浮气泡（::after 读 data-tip），键盘聚焦同样展开。 */
-.dshgt-help{position:relative;flex:none;margin-top:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--gt-border);border-radius:50%;background:var(--gt-bg);color:var(--gt-muted);font-size:10px;line-height:1;font-weight:600;cursor:help;user-select:none;outline:none;}
+.dshgt-help{position:relative;flex:none;margin-top:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--gt-border);border-radius:50%;background:var(--gt-bg);color:var(--gt-muted);font-size:10px;line-height:1;font-weight:600;cursor:help;user-select:none;}
 .dshgt-help:hover,.dshgt-help:focus-visible{color:var(--gt-fg);border-color:color-mix(in srgb,var(--gt-accent) 55%,var(--gt-border));}
 .dshgt-help::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 7px);z-index:30;width:max-content;max-width:280px;padding:7px 9px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,var(--gt-card));color:var(--gt-fg);border:1px solid var(--gt-border);font-size:12px;font-weight:400;line-height:1.55;letter-spacing:0;text-align:left;white-space:normal;overflow-wrap:break-word;box-shadow:0 10px 26px rgba(0,0,0,.28);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease,visibility .12s;}
 .dshgt-help:hover::after,.dshgt-help:focus-visible::after{opacity:1;visibility:visible;}
@@ -244,6 +244,7 @@ export const CSS = `
 .dshgt-delivery{border:1px solid var(--gt-border);border-radius:12px;padding:18px 20px 16px;background:var(--gt-card);display:flex;flex-direction:column;gap:6px;}
 .dshgt-delivery-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .dshgt-pill-mini{margin-left:auto;font-size:12px;color:var(--gt-muted);border:1px solid var(--gt-border);border-radius:999px;padding:2px 9px;background:var(--gt-bg);}
+/* 交付卡标题按状态变化，字号仍是本页主角；日期在上一行的 meta 里只出现一次。 */
 .dshgt-delivery h2{margin:4px 0 0;font-size:18px;font-weight:600;letter-spacing:-.01em;line-height:1.35;word-break:break-word;}
 .dshgt-when{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--gt-muted);}
 .dshgt-when a{color:var(--gt-accent);text-decoration:none;}
@@ -259,12 +260,37 @@ export const CSS = `
 .dshgt-fact{padding:0 14px;border-left:1px solid var(--gt-border);min-width:0;}
 .dshgt-fact:first-child{padding-left:0;border-left:0;}
 .dshgt-fact-k{font-size:11.5px;color:var(--gt-muted);margin-bottom:2px;}
-.dshgt-fact-v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dshgt-fact-v{display:flex;align-items:center;gap:6px;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow:hidden;white-space:nowrap;}
+/* 截断值保留全文 title，并给一个可键盘触达的复制入口（长 commit / hash 不必手抄）。 */
+.dshgt-fact-v > span{overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.dshgt-fact-copy{flex:none;appearance:none;border:0;background:none;padding:0 2px;font-family:inherit;font-size:11px;color:var(--gt-muted);cursor:pointer;border-radius:4px;}
+.dshgt-fact-copy:hover{color:var(--gt-accent);text-decoration:underline;}
+.dshgt-fact-copy.is-copied{color:var(--gt-ok);}
+/* 概览首屏第一条：下次运行。常驻，不随窄栏隐藏（外壳里的同一条在 ≤900px 会被收起）。 */
+.dshgt-nextrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--gt-muted);padding:0 2px 2px;}
+.dshgt-nextrow-key{font-weight:600;color:var(--gt-fg);}
+.dshgt-nextrow-val{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--gt-fg);}
+.dshgt-nextrow-rel{color:var(--gt-muted);}
+/* 首次使用：给动作，不留一句「还没有运行记录」的死胡同。 */
+.dshgt-guide{border:1px solid var(--gt-border);border-radius:12px;padding:18px 20px 16px;background:var(--gt-card);display:flex;flex-direction:column;gap:8px;}
+.dshgt-guide h2{margin:0;font-size:16px;font-weight:650;letter-spacing:-.01em;}
+.dshgt-guide-desc{margin:0;font-size:13px;line-height:1.7;color:var(--gt-muted);max-width:560px;}
+.dshgt-guide-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.dshgt-guide-note{margin:0;font-size:12px;color:var(--gt-warn);}
+/* 外壳级：轮询失败时页面可能停在旧快照上，明确说出来并给重连入口。 */
+.dshgt-stale{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 14px;border-bottom:1px solid color-mix(in srgb,var(--gt-warn) 35%,var(--gt-border));background:color-mix(in srgb,var(--gt-warn) 10%,var(--gt-bg));font-size:12px;color:var(--gt-fg);}
+.dshgt-stale > span{flex:1;min-width:0;}
+.dshgt-head-hint{font-size:12px;color:var(--gt-warn);align-self:center;}
+.dshgt-day-note{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--gt-muted);}
+.dshgt-alert-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .dshgt-block{display:flex;flex-direction:column;gap:8px;}
 .dshgt-block > .dshgt-btn{align-self:flex-start;}
-.dshgt-section-label{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--gt-muted);letter-spacing:.02em;}
+/* 分组标题用真实 h2（屏幕阅读器可跳读），视觉上仍是小节眉标。 */
+.dshgt-section-label{display:flex;align-items:center;gap:9px;margin:0;font-size:12px;font-weight:600;color:var(--gt-muted);letter-spacing:.02em;}
 .dshgt-section-label:after{content:"";height:1px;flex:1;background:color-mix(in srgb,var(--gt-border) 70%,transparent);}
-.dshgt-section-tail{margin-left:auto;font-size:11.5px;color:var(--gt-muted);}
+/* 小节标题与右侧动作分行放：h2 里不再夹一个按钮，屏幕阅读器读标题时不带动作文案。 */
+.dshgt-section-row{display:flex;align-items:center;gap:10px;}
+.dshgt-section-row > .dshgt-section-label{flex:1;min-width:0;}
 .dshgt-ready-list{border-top:1px solid var(--gt-border);}
 .dshgt-ready-row{display:grid;grid-template-columns:16px 108px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:46px;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 70%,transparent);font-size:13.5px;}
 .dshgt-ready-label{color:var(--gt-muted);font-size:13px;}
@@ -558,6 +584,8 @@ export const CSS = `
 .dshgt-addmodal{max-width:420px;}
 .dshgt-addmodal-input{height:34px;width:100%;}
 .dshgt-addmodal-err{color:var(--gt-err);}
+/* 键盘焦点：可交互元素统一给可见焦点环；此前只有少数自定义控件有，Tab 走查会跟丢。 */
+.dshgt-btn:focus-visible,.dshgt-chip:focus-visible,.dshgt-tab:focus-visible,.dshgt-vtab:focus-visible,.dshgt-day:focus-visible,.dshgt-linkbtn:focus-visible,.dshgt-icon-btn:focus-visible,.dshgt-fact-copy:focus-visible,.dshgt-alert-dismiss:focus-visible,.dshgt-period-seg button:focus-visible,.dshgt-seg button:focus-visible,.dshgt-subs-th:focus-visible,.dshgt-subs-act:focus-visible,.dshgt-about-pkglink:focus-visible{outline:2px solid var(--gt-accent);outline-offset:2px;}
 @media (max-width:1040px){
   .dshgt-subs-thead,.dshgt-subs-row{grid-template-columns:240px 120px 110px minmax(0,1fr);}
   .dshgt-subs-sum,.dshgt-subs-th-summary{display:none;}

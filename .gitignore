@@ -21,3 +21,7 @@ design-demos/
 
 # Archify 交互图产物（本地临时，不提交）
 .archify/
+
+# 项目级 Agent Skill（本地安装，不入库）
+.agents/
+skills-lock.json

@@ -3,10 +3,14 @@
  *
  * 所有状态都来自 `/state`；运行中只显示开始时间、已用时与「核心执行中」，
  * 不伪造九步百分比。PR 不写「已合并」——state 无法区分 merged/closed。
+ *
+ * 顺序按问题的重要性排：下次运行 → 上次交付 → 用量 → 缺什么 → 历史各期。
+ * 「下次运行」在这里常驻（外壳的同一条在窄栏会被收起），首次使用给可点的下一步而不是一句空话。
  */
-import { Btn, Pill, React, duration, formatTokens, h, localTime, shortHash } from './ui.js';
+import { Btn, Pill, React, copyText, duration, formatTokens, h, localTime, nextRunText, relativeFuture, shortHash } from './ui.js';
 import type { Translate } from './i18n.js';
 import type { DigestTarget, RunRecord, StatePayload } from './api.js';
+import type { SettingsSection } from './settings.js';
 import type { StoreValue } from './store.js';
 import { reasonHint } from './error-copy.js';
 import type { RunController } from './run-controller.js';
@@ -22,6 +26,8 @@ import {
   type Period,
 } from './digest-core.js';
 
+const COPIED_TTL_MS = 1500;
+
 export interface OverviewProps {
   t: Translate;
   lang: 'zh' | 'en';
@@ -29,7 +35,7 @@ export interface OverviewProps {
   controller: RunController;
   onOpenDigest: (target?: DigestTarget) => void;
   onOpenRuns: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
 }
 
 function statusPill(t: Translate, record: RunRecord): any {
@@ -48,10 +54,11 @@ const STATUS_LAMP: Record<DigestStatus, string> = {
   missing: 'warn',
 };
 
-function dayLabel(t: Translate, day: { status: DigestStatus; record: RunRecord }): string {
-  switch (day.status) {
+/** 状态词：成功也写「成功」，时长另占一行，避免同一行前两期是状态、后三期是耗时。 */
+function statusWord(t: Translate, status: DigestStatus): string {
+  switch (status) {
     case 'preview':
-      return duration(day.record.durationMs);
+      return t('state.ok');
     case 'failed':
       return t('state.failed');
     case 'skipped':
@@ -63,6 +70,14 @@ function dayLabel(t: Translate, day: { status: DigestStatus; record: RunRecord }
     case 'missing':
       return t('digest.tag.missing');
   }
+}
+
+/** 交付卡标题跟着运行结果变：失败/无变更/试跑不能再叫「今天的榜单」。 */
+function deliveryTitle(t: Translate, record: RunRecord): string {
+  if (!record.ok) return t('overview.last.digestFailed');
+  if (record.skipped) return t('overview.last.digestSkipped');
+  if (record.kind === 'dry-run') return t('overview.last.digestDry');
+  return record.preview === undefined ? t('overview.last.digestNoPreview') : t('overview.last.digestOk');
 }
 
 function prLabel(t: Translate, state: StatePayload, record: RunRecord | null): { label: string; url?: string; kind: 'warn' | 'ok' | 'idle' } | null {
@@ -81,7 +96,18 @@ function prLabel(t: Translate, state: StatePayload, record: RunRecord | null): {
   return { label: t('overview.last.prCreated'), url: record.prUrl, kind: 'ok' };
 }
 
-function readyRows(t: Translate, state: StatePayload): Array<{ ok: boolean; label: string; value: string; extra?: string }> {
+/** 就绪检查的四行；壳层也复用它算「还差几项」和缺的是哪些。 */
+export interface ReadyRow {
+  ok: boolean;
+  label: string;
+  value: string;
+  extra?: string;
+  /** 低频细节（wire 版本），收进 title，不占正文。 */
+  detail?: string;
+  section: SettingsSection;
+}
+
+export function readyRows(t: Translate, state: StatePayload): ReadyRow[] {
   const core = state.core;
   const credential = credentialView(state.model, t);
   const repo = state.settings.repo;
@@ -90,25 +116,29 @@ function readyRows(t: Translate, state: StatePayload): Array<{ ok: boolean; labe
       ok: core.state === 'ready',
       label: t('overview.ready.core'),
       value: core.state === 'ready' ? `${core.version ?? '—'} · ${t('core.ready')}` : t(`core.${core.state}`),
-      ...(core.ipcSchema === undefined ? {} : { extra: `ipc ${core.ipcSchema} · digest ${core.digestSchema ?? '—'}` }),
+      section: 'source',
+      ...(core.ipcSchema === undefined ? {} : { detail: `ipc ${core.ipcSchema} · digest ${core.digestSchema ?? '—'}` }),
     },
     {
       ok: credential.ok,
       label: t('overview.ready.model'),
       value: `${state.settings.model.provider} / ${state.settings.model.model || '—'}`,
       extra: credential.label,
+      section: 'model',
     },
     {
       ok: repo.path.trim() !== '',
       label: t('overview.ready.repo'),
       value: repo.path.trim() === '' ? t('repo.path.empty') : repo.path,
       extra: repo.commitMode === 'direct' ? t('repo.commitMode.direct') : t('repo.commitMode.branch'),
+      section: 'repo',
     },
     {
       ok: state.github.configured,
       label: t('overview.ready.github'),
       value: state.github.configured ? t('auth.configured') : t('auth.missing'),
       extra: `${state.github.authMode}${state.github.source === '' ? '' : ` · ${state.github.source}`}`,
+      section: 'auth',
     },
   ];
 }
@@ -139,6 +169,45 @@ function glanceCard(title: string, cells: any[]): any {
   );
 }
 
+/** 一格事实：截断的值留 title，并给键盘可达的复制入口；复制回执 1.5 s 自动退场。 */
+function FactCell(props: { t: Translate; label: string; value: string; copy?: boolean; copyValue?: string }): any {
+  const [copiedAt, setCopiedAt] = React.useState(0);
+  React.useEffect(() => {
+    if (copiedAt === 0) return () => undefined;
+    const timer = setTimeout(() => setCopiedAt(0), COPIED_TTL_MS);
+    return () => clearTimeout(timer);
+  }, [copiedAt]);
+  // 展示值可能被截断（hash 只显示前 10 位），复制走完整值，否则「复制完整值」名不副实。
+  const full = props.copyValue ?? props.value;
+  const copy = (): void => {
+    void copyText(full).then((ok) => {
+      if (ok) setCopiedAt(Date.now());
+    });
+  };
+  return h(
+    'div',
+    { className: 'dshgt-fact' },
+    h('div', { className: 'dshgt-fact-k' }, props.label),
+    h(
+      'div',
+      { className: 'dshgt-fact-v', title: full },
+      h('span', null, props.value),
+      props.copy === true && full !== '—'
+        ? h(
+            'button',
+            {
+              type: 'button',
+              className: `dshgt-fact-copy${copiedAt === 0 ? '' : ' is-copied'}`,
+              title: props.t('overview.copyFull'),
+              onClick: copy,
+            },
+            copiedAt === 0 ? props.t('overview.copy') : props.t('overview.copied'),
+          )
+        : null,
+    ),
+  );
+}
+
 export function OverviewView(props: OverviewProps): any {
   const { t, lang, store, controller } = props;
   const state = store.state;
@@ -150,7 +219,6 @@ export function OverviewView(props: OverviewProps): any {
   const last = state.status.lastResult ?? state.status.history[0] ?? null;
   const pr = prLabel(t, state, last);
   const rows = readyRows(t, state);
-  const readyCount = rows.filter((row) => row.ok).length;
   const timeZone = state.schedule.timezone;
   const today = zonedDateString(new Date(), timeZone);
   // 三榜（日/周/月）各自成组，只展示真正有记录的期数，不再为空白日期占位。
@@ -185,17 +253,86 @@ export function OverviewView(props: OverviewProps): any {
     glanceCard(t('overview.releases.title'), releaseCells),
   ].filter((card) => card !== null);
 
+  // 下次运行：时刻跟调度时区走；同一个挂钟只在 title 里再标注一次时区，避免两个挂钟互相打架。
+  const scheduleOn = state.schedule.enabled;
+  const tzHint = timeZone === '' ? undefined : t('overview.tz', { tz: timeZone });
+  const nextValue = !scheduleOn
+    ? t('shell.scheduleOff')
+    : state.schedule.nextRunAt === undefined
+      ? `${state.schedule.time} · ${timeZone}`
+      : nextRunText(state.schedule.nextRunAt);
+  const relNext = scheduleOn && state.schedule.nextRunAt !== undefined ? relativeFuture(state.schedule.nextRunAt, t) : undefined;
+  const missing = rows.filter((row) => !row.ok);
+  const dateText = last === null ? '' : last.date ?? localTime(last.at);
+  const dateDetail = last === null || last.at === undefined || tzHint === undefined
+    ? undefined
+    : `${localTime(last.at)} · ${tzHint}`;
+
   return h(
     'div',
     { className: 'dshgt-view dshgt-overview' },
     controller.running ? h(LiveRun, { t, controller, startedAt: controller.startedAt }) : null,
-    controller.error === null ? null : h('div', { className: 'dshgt-alert err' }, controller.error),
+    controller.error === null
+      ? null
+      : h(
+          'div',
+          { className: 'dshgt-alert err', role: 'alert' },
+          h(
+            'div',
+            { className: 'dshgt-alert-row' },
+            h('span', null, controller.error),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dshgt-alert-dismiss',
+                title: t('overview.last.dismiss'),
+                'aria-label': t('overview.last.dismiss'),
+                onClick: controller.clearError,
+              },
+              '×',
+            ),
+          ),
+        ),
+
+    h(
+      'div',
+      { className: 'dshgt-nextrow' },
+      h('span', { className: 'dshgt-nextrow-key' }, t('shell.nextRun')),
+      h('span', { className: 'dshgt-nextrow-val', title: scheduleOn ? tzHint : undefined }, nextValue),
+      relNext === undefined ? null : h('span', { className: 'dshgt-nextrow-rel' }, relNext),
+      scheduleOn
+        ? null
+        : h('button', { type: 'button', className: 'dshgt-linkbtn', onClick: () => props.onOpenSettings('scope') }, t('overview.next.configure')),
+    ),
 
     last === null
       ? h(
           'section',
-          { className: 'dshgt-delivery' },
-          h('div', { className: 'dshgt-delivery-top' }, h('span', { className: 'dshgt-hint' }, t('overview.last.none'))),
+          { className: 'dshgt-guide' },
+          h('h2', null, t('overview.empty.title')),
+          h('p', { className: 'dshgt-guide-desc' }, t('overview.empty.desc')),
+          missing.length === 0
+            ? null
+            : h(
+                'p',
+                { className: 'dshgt-guide-note' },
+                t('run.blocked', { count: missing.length, items: missing.map((row) => row.label).join(t('overview.listSep')) }),
+              ),
+          h(
+            'div',
+            { className: 'dshgt-guide-actions' },
+            h(
+              Btn,
+              {
+                variant: 'primary',
+                disabled: controller.running || controller.busy || missing.length > 0,
+                onClick: () => void controller.run(),
+              },
+              t('overview.empty.run'),
+            ),
+            h('button', { type: 'button', className: 'dshgt-linkbtn', onClick: () => props.onOpenSettings() }, t('overview.empty.settings')),
+          ),
         )
       : h(
           'section',
@@ -205,7 +342,7 @@ export function OverviewView(props: OverviewProps): any {
             { className: 'dshgt-delivery-top' },
             statusPill(t, last),
             h('span', { className: `dshgt-pchip ${last.period ?? 'daily'}` }, t(`period.${last.period ?? 'daily'}`)),
-            h('span', { className: 'dshgt-hint' }, last.date ?? localTime(last.at)),
+            h('span', { className: 'dshgt-hint', title: dateDetail }, dateText),
             h(
               'span',
               { className: 'dshgt-pill-mini' },
@@ -213,12 +350,11 @@ export function OverviewView(props: OverviewProps): any {
             ),
             last.legacy === true ? h('span', { className: 'dshgt-tag' }, t('runs.legacy')) : null,
           ),
-          h('h2', null, t('overview.last.digest', { date: last.date ?? localTime(last.at) })),
+          h('h2', null, deliveryTitle(t, last)),
           h(
             'div',
             { className: 'dshgt-when' },
             last.branch === undefined ? null : h('span', null, `${t('run.usage.branch')} `, h('span', { className: 'dshgt-mono' }, last.branch)),
-            last.commit === undefined ? null : h('span', null, `${t('run.usage.commit')} `, h('span', { className: 'dshgt-mono' }, last.commit)),
             pr === null
               ? null
               : pr.url === undefined
@@ -229,12 +365,25 @@ export function OverviewView(props: OverviewProps): any {
             ? null
             : h(
                 'div',
-                { className: 'dshgt-alert err dshgt-delivery-error' },
+                { className: 'dshgt-alert err dshgt-delivery-error', role: 'alert' },
                 h('b', null, `${t('error.prefix')} ${last.errorCode ?? 'INTERNAL'}`),
                 h('div', null, last.errorMessage ?? t('state.failed')),
                 last.errorReason === undefined
                   ? null
                   : h('div', { className: 'dshgt-hint' }, reasonHint(t, last.errorReason) ?? ''),
+                h(
+                  'div',
+                  { className: 'dshgt-alert-actions' },
+                  h(
+                    Btn,
+                    {
+                      small: true,
+                      disabled: controller.running || controller.busy || missing.length > 0,
+                      onClick: () => void controller.run(false, { force: true }),
+                    },
+                    t('overview.last.retry'),
+                  ),
+                ),
               ),
           h(
             'div',
@@ -242,12 +391,8 @@ export function OverviewView(props: OverviewProps): any {
             last.preview === undefined
               ? h('span', { className: 'dshgt-hint' }, t('overview.last.noPreview'))
               : h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'dshgt-filechip',
-                    onClick: () => { if (lastTarget !== undefined) props.onOpenDigest(lastTarget); },
-                  },
+                  'span',
+                  { className: 'dshgt-filechip dshgt-filechip-static', title: last.preview.file },
                   h('span', { className: 'dshgt-mono' }, last.preview.file),
                 ),
             last.preview === undefined
@@ -262,10 +407,10 @@ export function OverviewView(props: OverviewProps): any {
           h(
             'div',
             { className: 'dshgt-facts' },
-            h('div', { className: 'dshgt-fact' }, h('div', { className: 'dshgt-fact-k' }, t('run.usage.commit')), h('div', { className: 'dshgt-fact-v' }, last.commit === undefined ? '—' : last.commit)),
-            h('div', { className: 'dshgt-fact' }, h('div', { className: 'dshgt-fact-k' }, t('run.usage.hash')), h('div', { className: 'dshgt-fact-v' }, shortHash(last.contentHash))),
-            h('div', { className: 'dshgt-fact' }, h('div', { className: 'dshgt-fact-k' }, t('run.usage.core')), h('div', { className: 'dshgt-fact-v' }, last.coreVersion || '—')),
-            h('div', { className: 'dshgt-fact' }, h('div', { className: 'dshgt-fact-k' }, t('overview.model')), h('div', { className: 'dshgt-fact-v' }, last.model?.model ?? '—')),
+            h(FactCell, { t, label: t('run.usage.commit'), value: last.commit === undefined ? '—' : last.commit, copy: true }),
+            h(FactCell, { t, label: t('run.usage.hash'), value: shortHash(last.contentHash), copy: true, copyValue: last.contentHash }),
+            h(FactCell, { t, label: t('run.usage.core'), value: last.coreVersion || '—' }),
+            h(FactCell, { t, label: t('overview.model'), value: last.model?.model ?? '—' }),
           ),
         ),
 
@@ -281,12 +426,7 @@ export function OverviewView(props: OverviewProps): any {
     h(
       'section',
       { className: 'dshgt-block' },
-      h(
-        'div',
-        { className: 'dshgt-section-label' },
-        t('overview.ready.title'),
-        h('span', { className: 'dshgt-mono dshgt-section-tail' }, `${readyCount} / ${rows.length}`),
-      ),
+      h('h2', { className: 'dshgt-section-label' }, t('overview.ready.title')),
       h(
         'div',
         { className: 'dshgt-ready-list' },
@@ -298,11 +438,15 @@ export function OverviewView(props: OverviewProps): any {
             h('span', { className: 'dshgt-ready-label' }, row.label),
             h(
               'span',
-              { className: 'dshgt-ready-value' },
+              { className: 'dshgt-ready-value', title: row.detail },
               row.value,
               row.extra === undefined ? null : h('span', { className: 'dshgt-ready-extra' }, `· ${row.extra}`),
             ),
-            h('button', { type: 'button', className: 'dshgt-linkbtn', onClick: props.onOpenSettings }, t('overview.ready.view')),
+            h(
+              'button',
+              { type: 'button', className: 'dshgt-linkbtn', onClick: () => props.onOpenSettings(row.section) },
+              row.ok ? t('overview.ready.view') : t('overview.ready.fix'),
+            ),
           ),
         ),
       ),
@@ -313,14 +457,14 @@ export function OverviewView(props: OverviewProps): any {
       { className: 'dshgt-block' },
       h(
         'div',
-        { className: 'dshgt-section-label' },
-        t('overview.week.title'),
-        h('button', { type: 'button', className: 'dshgt-linkbtn dshgt-section-tail', onClick: props.onOpenRuns }, t('overview.week.all')),
+        { className: 'dshgt-section-row' },
+        h('h2', { className: 'dshgt-section-label' }, t('overview.week.title')),
+        h('button', { type: 'button', className: 'dshgt-linkbtn', onClick: props.onOpenRuns }, t('overview.week.all')),
       ),
       periods.length > 1
         ? h(
             'div',
-            { className: 'dshgt-period-seg dshgt-overview-seg', role: 'tablist', 'aria-label': t('overview.week.selectPeriod') },
+            { className: 'dshgt-period-seg dshgt-overview-seg', role: 'group', 'aria-label': t('overview.week.selectPeriod') },
             periods.map((item) => {
               const on = item === period;
               const count = groupMap.get(item)?.days.length ?? 0;
@@ -329,8 +473,7 @@ export function OverviewView(props: OverviewProps): any {
                 {
                   key: item,
                   type: 'button',
-                  role: 'tab',
-                  'aria-selected': on ? 'true' : 'false',
+                  'aria-pressed': on ? 'true' : 'false',
                   className: on ? 'on' : '',
                   onClick: () => setActivePeriod(item),
                 },
@@ -359,7 +502,8 @@ export function OverviewView(props: OverviewProps): any {
                       : `${formatBucketLabel(period, day.bucket, lang)} · ${day.record.errorCode}`,
                 },
                 h('div', { className: 'dshgt-day-date' }, shortBucket(period, day.bucket)),
-                h('div', { className: 'dshgt-day-status' }, h('span', { className: `dshgt-lamp ${STATUS_LAMP[day.status]}` }), dayLabel(t, day)),
+                h('div', { className: 'dshgt-day-status' }, h('span', { className: `dshgt-lamp ${STATUS_LAMP[day.status]}` }), statusWord(t, day.status)),
+                day.status === 'preview' ? h('div', { className: 'dshgt-day-note' }, duration(day.record.durationMs)) : null,
               ),
             ),
             showWaiting

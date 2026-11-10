@@ -3,6 +3,7 @@
  * 组件用 `h()` 手写，避免在 `__ModuleLoader__` 的 CJS 包装里引入 jsx runtime 依赖。
  */
 import React from 'react';
+import type { Translate } from './i18n.js';
 
 // 手写 createElement：把重载放宽成 any，避免每个组件都要为 children 写重载。
 export const h: any = React.createElement;
@@ -188,10 +189,13 @@ export function KV(props: { items: Array<[string, any]> }): any {
   );
 }
 
+/** 耗时：<1 s 给毫秒，<1 min 给一位小数秒，再长按 `分:秒`——长任务不再出现 `412.6s`。 */
 export function duration(ms: number): string {
-  if (ms <= 0) return '—';
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
   if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 export function shortHash(hash: string | undefined): string {
@@ -219,6 +223,34 @@ export function localTime(iso: string | null | undefined): string {
     second: '2-digit',
     hourCycle: 'h23',
   });
+}
+
+/** 「下次运行」的时刻：只到分钟，省掉秒；概览与外壳共用同一份格式化。 */
+export function nextRunText(iso: string | undefined): string {
+  if (iso === undefined) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+}
+
+/** 「还有多久」：只在未来时刻才有值，过点或不可解析时返回 undefined。 */
+export function relativeFuture(iso: string | undefined, t: Translate): string | undefined {
+  if (iso === undefined) return undefined;
+  const target = new Date(iso).getTime();
+  if (Number.isNaN(target)) return undefined;
+  const diff = target - Date.now();
+  if (diff <= 0) return undefined;
+  const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes < 60) return t('time.in.minutes', { minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('time.in.hours', { hours, minutes: minutes % 60 });
+  return t('time.in.days', { days: Math.floor(hours / 24) });
 }
 
 /** 复制失败不抛错：按钮只是便利动作，不阻塞任何流程。 */

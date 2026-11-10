@@ -13,8 +13,8 @@
 import { buildTranslate, activeLang } from './i18n.js';
 import { injectStyles } from './styles.js';
 import { useStore } from './store.js';
-import { SettingsView } from './settings.js';
-import { OverviewView } from './overview.js';
+import { SettingsView, type SettingsSection } from './settings.js';
+import { OverviewView, readyRows } from './overview.js';
 import { RunsView } from './runs.js';
 import { DigestView } from './digest.js';
 import { SubscriptionsView } from './subscriptions.js';
@@ -25,9 +25,8 @@ import { usePluginUpdate, isUpdateSettled, deriveSettledNotice } from './update-
 import { clearPendingUpdate, readPendingUpdate, type PendingUpdate } from './update-store.js';
 import { SidebarPanelIcon } from './panel-icon.js';
 import { useRunController } from './run-controller.js';
-import { credentialView } from './credential.js';
 import type { DigestTarget } from './api.js';
-import { Btn, h, React } from './ui.js';
+import { Btn, h, React, nextRunText, relativeFuture } from './ui.js';
 
 export const PANEL_ID = 'dsh-github-trending';
 
@@ -105,32 +104,6 @@ function navIcon(name: string, size = 16): any {
   );
 }
 
-function relativeFuture(iso: string | undefined, t: ReturnType<typeof buildTranslate>): string | undefined {
-  if (iso === undefined) return undefined;
-  const target = new Date(iso).getTime();
-  if (Number.isNaN(target)) return undefined;
-  const diff = target - Date.now();
-  if (diff <= 0) return undefined;
-  const minutes = Math.max(1, Math.round(diff / 60000));
-  if (minutes < 60) return t('time.in.minutes', { minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('time.in.hours', { hours, minutes: minutes % 60 });
-  return t('time.in.days', { days: Math.floor(hours / 24) });
-}
-
-function nextRunText(iso: string | undefined): string {
-  if (iso === undefined) return '—';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString(undefined, {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  });
-}
-
 export function apply(ctx: any): void {
   const slots = ctx.get?.('slots') as Slots | undefined;
   if (slots === undefined || typeof slots.register !== 'function') return;
@@ -154,6 +127,8 @@ export function apply(ctx: any): void {
     const value = store();
     const controller = useRunController(value);
     const [view, setView] = React.useState<ViewId>('overview');
+    // 进设置页的目标分区；undefined = 默认落在第一栏。用 key 让设置页按分区重挂载。
+    const [settingsSection, setSettingsSection] = React.useState<SettingsSection | undefined>(undefined);
     const [digestTarget, setDigestTarget] = React.useState<DigestTarget | undefined>(undefined);
     const [aboutOpen, setAboutOpen] = React.useState(false);
     // 自更新恢复提示：进入面板时读一次「刚点过更新」的记号（重开的新进程读得到）。
@@ -177,21 +152,21 @@ export function apply(ctx: any): void {
       setView('digest');
     }, []);
     const openRuns = React.useCallback((): void => setView('runs'), []);
-    const openSettings = React.useCallback((): void => setView('settings'), []);
+    // 「查看 / 去补」带分区进入设置页：概览点哪一行，设置页就落在哪一栏。
+    const openSettings = React.useCallback((section?: SettingsSection): void => {
+      setSettingsSection(section);
+      setView('settings');
+    }, []);
     const openSubscriptions = React.useCallback((): void => setView('subscriptions'), []);
     const openAbout = React.useCallback((): void => setAboutOpen(true), []);
     const state = value.state;
     const plugin = state?.plugin;
     const history = state?.status.history ?? [];
     const schedule = state?.schedule;
-    const ready = state === null
-      ? 0
-      : [
-          state.core.state === 'ready',
-          credentialView(state.model, t).ok,
-          state.settings.repo.path.trim() !== '',
-          state.github.configured,
-        ].filter(Boolean).length;
+    const rows = state === null ? [] : readyRows(t, state);
+    const ready = rows.filter((row) => row.ok).length;
+    const missing = rows.filter((row) => !row.ok);
+    const canRun = state !== null && missing.length === 0;
     const digestTail = state?.status.lastResult?.date ?? state?.status.history[0]?.date;
     const showActions = view === 'overview' || view === 'runs' || view === 'digest';
     const nextRun = schedule === undefined || !schedule.enabled
@@ -200,6 +175,13 @@ export function apply(ctx: any): void {
         ? `${schedule.time} · ${schedule.timezone}`
         : nextRunText(schedule.nextRunAt);
     const relNext = schedule !== undefined && schedule.enabled && schedule.nextRunAt !== undefined ? relativeFuture(schedule.nextRunAt, t) : undefined;
+    // 窄栏会把按钮挤成一行文字，title 是唯一的口径说明入口。
+    // /state 还没拿到时不能拿「缺 0 项」当结论，否则页头会出现自相矛盾的「还差 0 项：」。
+    const blockedHint = state === null
+      ? (value.loading ? t('quickfill.loading') : value.error ?? undefined)
+      : canRun
+        ? undefined
+        : t('run.blocked', { count: missing.length, items: missing.map((row) => row.label).join(t('overview.listSep')) });
 
     const viewNode =
       view === 'overview'
@@ -226,7 +208,14 @@ export function apply(ctx: any): void {
             ? h(RunsView, { t, store: value, controller, onOpenDigest: openDigest })
             : view === 'subscriptions'
               ? h(SubscriptionsView, { t, store: value, onOpenSettings: openSettings })
-              : h(SettingsView, { t, store: value, pickDirectory, onOpenSubscriptions: openSubscriptions });
+              : h(SettingsView, {
+                  key: settingsSection ?? 'default',
+                  t,
+                  store: value,
+                  pickDirectory,
+                  ...(settingsSection === undefined ? {} : { initialSection: settingsSection }),
+                  onOpenSubscriptions: openSubscriptions,
+                });
 
     return h(
       'div',
@@ -257,7 +246,11 @@ export function apply(ctx: any): void {
                   type: 'button',
                   className: `dshgt-tab${view === item.id ? ' on' : ''}`,
                   'aria-current': view === item.id ? 'page' : undefined,
-                  onClick: () => setView(item.id),
+                  onClick: () => {
+                    // 点当前所在的「设置」tab 不算换页：保留分区，别把正在填的草稿重挂载丢掉。
+                    if (view !== item.id) setSettingsSection(undefined);
+                    setView(item.id);
+                  },
                 },
                 navIcon(item.icon),
                 h('span', null, t(item.label)),
@@ -275,8 +268,8 @@ export function apply(ctx: any): void {
             h(
               'span',
               { className: 'dshgt-status-item' },
-              h('span', { className: `dshgt-lamp ${ready === 4 ? 'ok' : ready > 0 ? 'warn' : 'err'}` }),
-              t('shell.ready', { ready, total: 4 }),
+              h('span', { className: `dshgt-lamp ${rows.length === 0 ? '' : ready === rows.length ? 'ok' : ready > 0 ? 'warn' : 'err'}` }),
+              rows.length === 0 ? t('quickfill.loading') : t('shell.ready', { ready, total: rows.length }),
             ),
             h(
               'span',
@@ -287,6 +280,15 @@ export function apply(ctx: any): void {
             ),
           ),
         ),
+        // 轮询失败时页面会停在旧快照上；外壳层说一句，任何视图都看得到并可就地重连。
+        value.error === null
+          ? null
+          : h(
+              'div',
+              { className: 'dshgt-stale', role: 'status' },
+              h('span', null, t('shell.stale')),
+              h(Btn, { small: true, onClick: () => void value.refresh() }, t('shell.stale.retry')),
+            ),
         h(
           'div',
           { className: 'dshgt-main' },
@@ -309,7 +311,8 @@ export function apply(ctx: any): void {
                       {
                         key: 'dry',
                         onClick: () => void controller.run(true),
-                        disabled: controller.running || controller.busy,
+                        disabled: controller.running || controller.busy || !canRun,
+                        title: t('run.dryRun.hint'),
                       },
                       t('run.dryRunShort'),
                     ),
@@ -318,7 +321,8 @@ export function apply(ctx: any): void {
                       {
                         key: 'force',
                         onClick: () => void controller.run(false, { force: true }),
-                        disabled: controller.running || controller.busy,
+                        disabled: controller.running || controller.busy || !canRun,
+                        title: t('run.force.hint'),
                       },
                       t('run.force'),
                     ),
@@ -328,7 +332,8 @@ export function apply(ctx: any): void {
                         key: 'run',
                         variant: 'primary',
                         onClick: () => void controller.run(),
-                        disabled: controller.running || controller.busy,
+                        disabled: controller.running || controller.busy || !canRun,
+                        title: canRun ? t('run.button.hint') : blockedHint,
                       },
                       controller.running ? t('run.running') : t('run.button'),
                     ),
@@ -336,6 +341,9 @@ export function apply(ctx: any): void {
                       ? h(Btn, { key: 'cancel', variant: 'danger', onClick: () => void controller.cancel() }, t('run.cancel'))
                       : null,
                   ]
+                : null,
+              showActions && blockedHint !== undefined
+                ? h('span', { className: 'dshgt-head-hint' }, blockedHint)
                 : null,
             ),
           ),

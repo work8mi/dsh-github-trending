@@ -31,7 +31,9 @@ import { credentialView } from './credential.js';
 
 const LANGUAGES = ['all', 'typescript', 'python', 'go', 'rust', 'java', 'c', 'cpp', 'javascript', 'csharp'];
 
-type SectionId = 'source' | 'model' | 'repo' | 'auth' | 'scope' | 'releases';
+export type SectionId = 'source' | 'model' | 'repo' | 'auth' | 'scope' | 'releases';
+/** 概览的「查看 / 去补」按分区深链到设置页，与设置页分区是同一套标识。 */
+export type SettingsSection = SectionId;
 
 /** 分区顺序，与左侧 tab 一致；用于「是否还有未保存改动」的判定。 */
 const SECTIONS: SectionId[] = ['source', 'model', 'repo', 'auth', 'scope', 'releases'];

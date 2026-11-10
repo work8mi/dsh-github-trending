@@ -308,7 +308,7 @@ export function RunsView(props: RunsProps): any {
     'div',
     { className: 'dshgt-view dshgt-runs' },
     controller.running ? h(LiveRun, { t, controller, startedAt: controller.startedAt }) : null,
-    controller.error === null ? null : h('div', { className: 'dshgt-alert err' }, controller.error),
+    controller.error === null ? null : h('div', { className: 'dshgt-alert err', role: 'alert' }, controller.error),
     h(
       'div',
       { className: 'dshgt-runs-head' },
