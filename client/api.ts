@@ -274,6 +274,8 @@ export interface SettingsShape {
   outputLanguage?: string;
   /** 核心出站网络代理；空串 = 不使用。旧设置可能没有该字段。 */
   network?: { proxy: string };
+  /** 单次运行硬超时（毫秒，插件编排参数，不进核心 YAML）；旧设置可能没有该字段。 */
+  run?: { timeoutMs: number };
 }
 
 export interface StatePayload {

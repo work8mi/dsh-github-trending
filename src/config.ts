@@ -220,10 +220,24 @@ export interface Settings {
    * HTTP_PROXY/HTTPS_PROXY/ALL_PROXY（含大小写两份）。空串 = 不使用代理。
    */
   network: NetworkSettings;
+  /**
+   * 单次运行的编排参数（不进核心 YAML：核心没有这些字段，只在插件层生效）。
+   */
+  run: RunSettings;
 }
 
 export interface NetworkSettings {
   proxy: string;
+}
+
+export interface RunSettings {
+  /**
+   * 单次核心运行的硬超时（毫秒）。超时后 SIGTERM→3s→SIGKILL。
+   * 默认 5 分钟：给 observe 阶段几十个仓库串行抓取留足余量（GitHub 单请求
+   * 10s×4 重试，慢网络下容易堆到分钟级）。仅影响插件对核心进程的看门狗，
+   * 与核心内部 budgetSeconds 无关。
+   */
+  timeoutMs: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -286,6 +300,7 @@ export const DEFAULT_SETTINGS: Settings = {
   coreAutoDownload: true,
   outputLanguage: '',
   network: { proxy: '' },
+  run: { timeoutMs: 300_000 },
 };
 
 /** 核心支持的 provider 默认端点（空字符串 = 必须由用户填）。 */
@@ -312,7 +327,7 @@ export function sectionOfField(field: string): SettingsSection | undefined {
   if (field.startsWith('observe.')) return 'scope';
   if (field.startsWith('releases.')) return 'releases';
   if (field.startsWith('schedule.')) return 'scope';
-  if (field === 'corePath' || field === 'coreAutoDownload' || field === 'network.proxy') return 'source';
+  if (field === 'corePath' || field === 'coreAutoDownload' || field === 'network.proxy' || field === 'run.timeoutMs') return 'source';
   return undefined;
 }
 
@@ -327,6 +342,7 @@ export function mergeSettingsSection(stored: Settings, incoming: Settings, secti
       next.corePath = incoming.corePath;
       next.coreAutoDownload = incoming.coreAutoDownload;
       next.network = incoming.network;
+      next.run = incoming.run;
       break;
     case 'model':
       next.model = incoming.model;
@@ -418,6 +434,7 @@ export function normalizeSettings(input: unknown): Settings {
   const releasesSchedule = (releases.schedule ?? {}) as Record<string, unknown>;
   const output = (raw.output ?? {}) as Record<string, unknown>;
   const schedule = (raw.schedule ?? {}) as Record<string, unknown>;
+  const run = (raw.run ?? {}) as Record<string, unknown>;
   const commitMode = str(repo.commitMode, DEFAULT_SETTINGS.repo.commitMode);
   const authMode = str(github.authMode, DEFAULT_SETTINGS.github.authMode);
   const since = str(trending.since, DEFAULT_SETTINGS.trending.since);
@@ -511,6 +528,10 @@ export function normalizeSettings(input: unknown): Settings {
     network: {
       proxy: str((raw.network as Record<string, unknown> | undefined)?.proxy, DEFAULT_SETTINGS.network.proxy).trim(),
     },
+    run: {
+      // 缺失/非法一律回落默认；范围合法性交给 validateSettings。
+      timeoutMs: num(run.timeoutMs, DEFAULT_SETTINGS.run.timeoutMs),
+    },
   };
 }
 
@@ -554,6 +575,17 @@ export function validateSettings(settings: Settings, providers: readonly string[
       field: 'network.proxy',
       code: 'CONFIG_INVALID',
       message: '代理必须是 http(s):// 地址（如 http://127.0.0.1:7890），留空则不使用代理',
+    });
+  }
+
+  // run.timeoutMs：单次运行硬超时，60s–30min 的整数毫秒；越界会给用户一个莫名其妙的
+  // 「运行很久才失败」，所以当场拦下。
+  const runTimeout = settings.run?.timeoutMs;
+  if (!Number.isInteger(runTimeout) || runTimeout < 60_000 || runTimeout > 1_800_000) {
+    problems.push({
+      field: 'run.timeoutMs',
+      code: 'CONFIG_INVALID',
+      message: '单次运行超时必须是 60000–1800000 之间的整数毫秒（默认 300000，即 5 分钟）',
     });
   }
 

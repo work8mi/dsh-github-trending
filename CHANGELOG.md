@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.9.17] - 2026-11-11
+
+### Features
+
+- **run timeout**: 新增「单次运行超时」（`run.timeoutMs`，设置 → 核心 → 单次运行超时，默认 300 秒，范围 60–1800 秒）。此前单次运行超时是编译期常量 120 秒、无法调整，慢网络下容易被提前杀掉。榜单与发版两条运行路径都按此值生效。
+- **timeout 归因**: `CORE_TIMEOUT` 改用单调时钟判断，墙钟远大于进程活跃时长时，文案会写明「疑似系统挂起/睡眠」，不再把每次超时都记成同一个「120 s 超时」。
+
+### Chores
+
+- **core**: `dsh.core.version` 0.12.3 → **0.12.4**（首次运行自动下载/校验的核心版本）。带上游修复：核心 HTTP 库 `ghttp` 的 `Transport` 未设置 `Proxy`，导致注入的 `HTTP(S)_PROXY` 被静默忽略、抓 GitHub 强制直连——在需要代理的网络下表现为直连超时或撞 GitHub 403；这正是「设置里填了代理却仍超时/403」的根因。0.12.4 起 `Transport.Proxy` 默认 `ProxyFromEnvironment`，代理真正生效（[golib#132](https://github.com/morehao/golib/pull/132) → [trendradar#61](https://github.com/morehao/trendradar/pull/61) #62）。**注意：代理要对核心生效需核心 ≥ 0.12.4**；最低核心要求仍为 0.12.0。
+- 版本号 `0.9.16` → `0.9.17`。
+
+## [v0.9.16] - 2026-11-11
+
+### Fixes
+
+- **settings**: 仓库路径改为可编辑输入框；在浏览型宿主上目录选择器不可用时优雅降级。（#158）
+
 ## [v0.9.15] - 2026-11-07
 
 ### Chores

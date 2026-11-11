@@ -340,6 +340,29 @@ test('network.proxy：归一化默认空串、校验 http(s) 形态、可保存�
   assert.equal(merged.network.proxy, 'http://127.0.0.1:7890');
 });
 
+test('run.timeoutMs：默认 300000、非法回落、范围校验、归属 source 分区', () => {
+  // 缺省 300000（5 分钟）。
+  const d = config.normalizeSettings({});
+  assert.equal(d.run.timeoutMs, 300_000);
+  // 显式值保留；非数字回落默认。
+  assert.equal(config.normalizeSettings({ run: { timeoutMs: 600_000 } }).run.timeoutMs, 600_000);
+  assert.equal(config.normalizeSettings({ run: { timeoutMs: 'abc' } }).run.timeoutMs, 300_000);
+  // 范围外被校验拦下（< 60s、> 30min、非整数），归属 source。
+  const check = (ms) => {
+    const s = config.normalizeSettings({ run: { timeoutMs: ms }, model: { provider: 'deepseek', model: 'x' }, repo: { path: '/tmp/x' } });
+    return config.validateSettings(s, ['deepseek']).find((x) => x.field === 'run.timeoutMs');
+  };
+  assert.ok(check(1_000), 'too small rejected');
+  assert.ok(check(3_600_000), 'too large rejected');
+  assert.equal(check(120_000), undefined, '120s ok');
+  assert.equal(config.sectionOfField('run.timeoutMs'), 'source');
+  // 分段保存只并入 source 的 run。
+  const stored = config.normalizeSettings({});
+  const incoming = config.normalizeSettings({ run: { timeoutMs: 600_000 } });
+  const merged = config.mergeSettingsSection(stored, incoming, 'source');
+  assert.equal(merged.run.timeoutMs, 600_000);
+});
+
 test('observe：默认开启，归一化、校验与 toCoreConfig 透传', () => {
   // 默认：开启、回填 30 天、候选上限 300。
   const defaults = config.normalizeSettings({});

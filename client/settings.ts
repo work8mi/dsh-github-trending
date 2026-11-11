@@ -48,7 +48,7 @@ function cloneSettings(settings: SettingsShape): SettingsShape {
 function sectionSlice(settings: SettingsShape, section: SectionId): Record<string, unknown> {
   switch (section) {
     case 'source':
-      return { corePath: settings.corePath, network: settings.network };
+      return { corePath: settings.corePath, network: settings.network, run: settings.run };
     case 'model':
       return { model: settings.model };
     case 'repo':
@@ -72,6 +72,44 @@ function sectionSlice(settings: SettingsShape, section: SectionId): Record<strin
 type Notice = { kind: 'ok' | 'err'; text: string };
 
 const NOTICE_TTL_MS = 5000;
+
+/** 目录选择后端探测结果：客户端拿不到 capability().kind，只能靠一次 pick 失败判定。 */
+export type PickerKind = 'unknown' | 'native' | 'browse';
+
+/** 宿主在 browse 组合下拒绝 pick 的错误码（见 dsh-api-workspace-controller requireCapability）。 */
+const DIRECTORY_PICKER_UNAVAILABLE = 'directory-picker/unavailable';
+/**
+ * 判定「当前宿主无系统目录选择」的文本片段。注意：宿主 `RemoteError` 的 code 在
+ * ui-workspace 的 `pickDirectory()` 里被丢掉了——它只 `throw new Error('directory picker
+ * failed: ' + result.error.message)`，客户端拿到的是**纯 message**。所以必须认这段
+ * capability 文本，而不能只认错误码（错误码只在未来宿主透传时作为兜底）。
+ */
+const UNAVAILABLE_MARKERS = ['needs the native capability', 'the composed picker serves "browse"'];
+
+/** 从 pick 失败里认出「当前宿主无系统目录选择」——先认错误码（若有），再认 message 文本。 */
+export function isPickerUnavailable(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') {
+    return typeof error === 'string' && matchesUnavailableText(error);
+  }
+  const e = error as { code?: unknown; message?: unknown; rpcError?: { code?: unknown; message?: unknown } };
+  const code = e.code ?? e.rpcError?.code;
+  if (code === DIRECTORY_PICKER_UNAVAILABLE) return true;
+  const message = typeof e.message === 'string' ? e.message : typeof e.rpcError?.message === 'string' ? e.rpcError.message : '';
+  return matchesUnavailableText(message);
+}
+
+function matchesUnavailableText(text: string): boolean {
+  if (text.includes(DIRECTORY_PICKER_UNAVAILABLE)) return true;
+  return UNAVAILABLE_MARKERS.some((marker) => text.includes(marker));
+}
+
+/** 把 pick 失败归一到用户可读文案：无系统目录选择 → 专门提示；其余回退原始 message。 */
+export function pickErrorText(error: unknown, t: Translate): string {
+  if (isPickerUnavailable(error)) return t('repo.pick.unavailable');
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: unknown })?.message;
+  return typeof message === 'string' && message !== '' ? message : String(error);
+}
 
 function sectionEquals(a: SettingsShape, b: SettingsShape, section: SectionId): boolean {
   return JSON.stringify(sectionSlice(a, section)) === JSON.stringify(sectionSlice(b, section));
@@ -107,6 +145,9 @@ export function SettingsView(props: { t: Translate; store: StoreValue; onClose?:
   const [githubTest, setGithubTest] = React.useState<GithubProbeResult | null>(null);
   const [signIn, setSignIn] = React.useState<GithubAttemptView>({ phase: 'idle' });
   const [signInModal, setSignInModal] = React.useState(false);
+  // 目录选择后端探测结果。客户端拿不到 capability().kind（只有 pick/list/createDirectory
+  // 三个 verb），只能靠一次 pick 失败来判定：'unknown' 未探测 / 'native' 可用 / 'browse' 不可用。
+  const [pickerKind, setPickerKind] = React.useState<PickerKind>('unknown');
 
   const anyDirty = SECTIONS.some((id) => dirtySections[id]);
   // 「核心」分区有唯一可保存字段：出站网络代理（network.proxy）。核心状态与下载
@@ -469,6 +510,22 @@ export function SettingsView(props: { t: Translate; store: StoreValue; onClose?:
         }),
       }),
     ),
+    h(
+      Row,
+      { label: t('run.timeout'), help: t('run.timeout.help') },
+      h(Input, {
+        mono: true,
+        width: 120,
+        value: String(Math.round((draft.run?.timeoutMs ?? 300_000) / 1000)),
+        placeholder: t('run.timeout.placeholder'),
+        onInput: (value: string) => update((next) => {
+          // UI 用秒，存储用毫秒；非数字/空先原样保留，交给保存时的 validateSettings 拦。
+          const seconds = Number(value);
+          next.run = { timeoutMs: Number.isFinite(seconds) && value.trim() !== '' ? Math.round(seconds * 1000) : 0 };
+        }),
+      }),
+      h('span', { className: 'dshgt-hint' }, t('run.timeout.unit')),
+    ),
     state.coexistence.found
       ? h(Alert, { kind: 'warn', title: t('coexist.title') }, h('div', { className: 'dshgt-mono', style: { fontSize: 12 } }, `${state.coexistence.path ?? ''} ${state.coexistence.version ?? ''}`), h('div', null, state.coexistence.message ?? ''), h('div', { className: 'dshgt-hint' }, t('coexist.hint')))
       : null,
@@ -552,18 +609,41 @@ export function SettingsView(props: { t: Translate; store: StoreValue; onClose?:
     h(
       Row,
       { label: t('repo.path') },
-      h('span', { className: 'dshgt-mono', style: { wordBreak: 'break-all' } }, draft.repo.path === '' ? t('repo.path.empty') : draft.repo.path),
+      h(Input, {
+        mono: true,
+        width: 260,
+        value: draft.repo.path,
+        placeholder: t('repo.path.placeholder'),
+        onInput: (value: string) => update((next) => { next.repo.path = value.trim(); }),
+      }),
       props.pickDirectory === undefined
         ? null
         : h(Btn, {
             small: true,
+            disabled: pickerKind === 'browse',
+            title: pickerKind === 'browse' ? t('repo.pick.unavailable') : undefined,
             onClick: () => {
-              void props.pickDirectory?.().then((picked) => {
-                if (typeof picked === 'string' && picked !== '') update((next) => { next.repo.path = picked; });
-              });
+              const pending = props.pickDirectory?.();
+              if (pending === undefined) return;
+              void pending
+                .then((picked) => {
+                  if (typeof picked === 'string' && picked !== '') update((next) => { next.repo.path = picked; });
+                })
+                .catch((error) => {
+                  const unavailable = isPickerUnavailable(error);
+                  if (unavailable) setPickerKind('browse');
+                  notify('err', pickErrorText(error, t));
+                });
             },
           }, t('repo.pick')),
     ),
+    pickerKind === 'browse'
+      ? h(
+          Row,
+          { label: '' },
+          h('span', { className: 'dshgt-hint' }, t('repo.pick.unavailableHint')),
+        )
+      : null,
     h(
       Row,
       { label: t('repo.baseBranch') },

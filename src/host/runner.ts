@@ -277,6 +277,7 @@ export class Runner {
         ...(effectiveForce ? { force: true } : {}),
         ...(model.baseURLOverride === undefined ? {} : { baseURLOverride: model.baseURLOverride }),
         signal: controller.signal,
+        timeoutMs: settings.run.timeoutMs,
         secrets: [apiKey, github.token],
         onStderr: (line) => store.appendLog(logFile, line),
       });
@@ -430,6 +431,7 @@ export class Runner {
         repoCount,
         ...(model.baseURLOverride === undefined ? {} : { baseURLOverride: model.baseURLOverride }),
         signal: controller.signal,
+        timeoutMs: settings.run.timeoutMs,
         secrets: [model.apiKey, github.token],
         onStderr: (line) => store.appendLog(logFile, line),
       });

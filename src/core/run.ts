@@ -6,6 +6,7 @@
  * 只有拿到可解析的结果信封才返回 `ok: true`，否则返回带错误码的结果或抛 `IpcError`。
  */
 import { spawn } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 
 import { toCoreConfig, toYaml, type Period, type Settings } from '../config.js';
 import { classifyStderr, redact } from '../errors.js';
@@ -123,6 +124,8 @@ export async function runCore(options: RunCoreOptions): Promise<RunCoreResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
   const startedAt = nowIso();
   const started = Date.now();
+  // 单调时钟：不受系统睡眠/改表影响，用来判断「超时到底是真跑满了，还是进程被挂起」。
+  const startedMono = performance.now();
   const channel = await openConfigChannel();
   const yaml = `${toYaml(toCoreConfig(options.settings, options.apiKey, options.baseURLOverride, options.period, options.repoCount, options.resolvedOutputLanguage))}\n`;
   const secrets = [options.apiKey, options.token, ...(options.secrets ?? [])];
@@ -157,6 +160,9 @@ export async function runCore(options: RunCoreOptions): Promise<RunCoreResult> {
   let timedOut = false;
   let aborted = false;
   let channelError: Error | undefined;
+  /** 超时触发那一刻的两种时长（毫秒）：墙钟 Date.now 与单调 performance.now 的差额。 */
+  let timeoutWallMs = 0;
+  let timeoutMonoMs = 0;
 
   // 配置写入在 spawn 之后：FIFO 的写端必须等读端打开。
   const publish = channel.publish(yaml).catch((error: unknown) => {
@@ -175,6 +181,8 @@ export async function runCore(options: RunCoreOptions): Promise<RunCoreResult> {
 
   const timer = setTimeout(() => {
     timedOut = true;
+    timeoutWallMs = Date.now() - started;
+    timeoutMonoMs = performance.now() - startedMono;
     try {
       child.kill('SIGTERM');
     } catch {
@@ -238,9 +246,18 @@ export async function runCore(options: RunCoreOptions): Promise<RunCoreResult> {
     throw new IpcError('CORE_CANCELLED', '运行已取消：核心进程已终止，未提交任何状态');
   }
   if (timedOut) {
+    // 墙钟明显长于单调时钟 → 进程被系统挂起（睡眠/待机）过，而不是核心真的跑满这么久。
+    // 给用户一个能对上的解释，避免每次都像同一个「超时」。
+    const driftMs = timeoutWallMs - timeoutMonoMs;
+    const wallS = Math.round(timeoutWallMs / 1000);
+    const monoTag = `${Math.round(timeoutMonoMs / 1000)} s`;
+    const suspended = driftMs > Math.max(30_000, timeoutMonoMs);
+    const detail = suspended
+      ? `；实际墙钟耗时 ${wallS} s，但进程活跃仅 ${monoTag}——差额主要来自系统挂起/睡眠，并非核心真的跑超时`
+      : '';
     throw new IpcError(
       'CORE_TIMEOUT',
-      `核心运行超时（${Math.round(timeoutMs / 1000)} s）已终止${tail === '' ? '' : `；最后输出：${tail}`}`,
+      `核心运行超时（${Math.round(timeoutMs / 1000)} s）已终止${detail}${tail === '' ? '' : `；最后输出：${tail}`}`,
     );
   }
   if (channelError !== undefined) {
