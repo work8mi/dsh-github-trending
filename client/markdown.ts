@@ -95,6 +95,46 @@ function alignStyle(align: Align | undefined): any {
   return align === undefined ? undefined : { textAlign: align };
 }
 
+/** 单元格开头的 `[标签]`（如 `[原文]`）：抽出来单独渲染成小 chip，不与摘要正文混成一串。 */
+const LEADING_TAG = /^\[([^\]\n]{1,16})\]\s*/;
+
+/** 摘要列超过这个字符数才折叠成三行；短摘要完整显示，不为整齐牺牲可读性。 */
+const CELL_CLAMP_CHARS = 96;
+
+interface CellParts {
+  tag: string | undefined;
+  rest: Inline[];
+}
+
+/** 摘出首段文本里的 `[标签]`；首节点不是文本或没有标签时原样返回。 */
+function splitLeadingTag(cell: Inline[]): CellParts {
+  const first = cell[0];
+  if (first === undefined || first.type !== 'text') return { tag: undefined, rest: cell };
+  const match = LEADING_TAG.exec(first.value);
+  if (match === null) return { tag: undefined, rest: cell };
+  const remainder = first.value.slice(match[0].length);
+  return {
+    tag: match[1],
+    rest: remainder === '' ? cell.slice(1) : [{ type: 'text', value: remainder }, ...cell.slice(1)],
+  };
+}
+
+/**
+ * compact 表的单元格内容：标签走 chip，长文本折叠成三行并把全文放进 `title`。
+ * 折叠只做视觉截断，DOM 里仍是全文，选中与复制不受影响。
+ */
+function renderCompactCell(cell: Inline[], key: string, clamp: boolean): any {
+  const { tag, rest } = splitLeadingTag(cell);
+  const full = inlineText(cell);
+  // 标签必须和正文同一段行内流：单独放进折叠块外层会各占一行，短摘要时尤其散。
+  const flow: any[] =
+    tag === undefined
+      ? renderInline(rest, key)
+      : [h('span', { key: `${key}-tag`, className: 'dshgt-md-tag' }, tag), ...renderInline(rest, key)];
+  if (!clamp || full.length <= CELL_CLAMP_CHARS) return flow;
+  return h('div', { key: `${key}-clamp`, className: 'dshgt-md-clamp', title: full }, flow);
+}
+
 function renderBlock(block: Block, key: string, headingId?: string): any {
   switch (block.type) {
     case 'heading': {
@@ -123,13 +163,19 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
       );
     case 'hr':
       return h('hr', { key, className: 'dshgt-md-hr' });
-    case 'table':
+    case 'table': {
+      // 「排行榜」形态：≥3 列且存在右对齐数字列。只有这种表换成紧凑的固定布局，
+      // 其它表格（元信息、任意 markdown 表）保持原有的自动布局与横向滚动。
+      const compact = block.header.length >= 3 && block.align.some((align) => align === 'right');
+      // 列宽交给 CSS（数字列定宽、仓库列随内容），行内样式只留对齐：
+      // 写死的像素宽度没法跟着面板宽度与容器查询一起收放。
+      const isNumeric = (index: number): boolean => block.align[index] === 'right';
       return h(
         'div',
-        { key, className: 'dshgt-md-tablewrap' },
+        { key, className: compact ? 'dshgt-md-tablewrap dshgt-md-tablewrap--compact' : 'dshgt-md-tablewrap' },
         h(
           'table',
-          { className: 'dshgt-md-table' },
+          { className: compact ? 'dshgt-md-table dshgt-md-table--compact' : 'dshgt-md-table' },
           h(
             'thead',
             null,
@@ -137,7 +183,16 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
               'tr',
               null,
               block.header.map((cell, index) =>
-                h('th', { key: `h${index}`, style: alignStyle(block.align[index]) }, renderInline(cell, `${key}-h${index}`)),
+                h(
+                  'th',
+                  {
+                    key: `h${index}`,
+                    scope: 'col',
+                    className: isNumeric(index) ? 'dshgt-md-num' : undefined,
+                    style: alignStyle(block.align[index]),
+                  },
+                  renderInline(cell, `${key}-h${index}`),
+                ),
               ),
             ),
           ),
@@ -148,18 +203,28 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
               h(
                 'tr',
                 { key: `r${rowIndex}` },
-                row.map((cell, cellIndex) =>
-                  h(
+                row.map((cell, cellIndex) => {
+                  const label = block.header[cellIndex];
+                  return h(
                     'td',
-                    { key: `c${cellIndex}`, style: alignStyle(block.align[cellIndex]) },
-                    renderInline(cell, `${key}-r${rowIndex}c${cellIndex}`),
-                  ),
-                ),
+                    {
+                      key: `c${cellIndex}`,
+                      className: isNumeric(cellIndex) ? 'dshgt-md-num' : undefined,
+                      style: alignStyle(block.align[cellIndex]),
+                      // 窄面板下表格会堆叠成卡片，列头隐藏后靠这个属性给数字补回单位。
+                      ...(compact && label !== undefined ? { 'data-label': inlineText(label) } : {}),
+                    },
+                    compact
+                      ? renderCompactCell(cell, `${key}-r${rowIndex}c${cellIndex}`, !isNumeric(cellIndex))
+                      : renderInline(cell, `${key}-r${rowIndex}c${cellIndex}`),
+                  );
+                }),
               ),
             ),
           ),
         ),
       );
+    }
   }
 }
 

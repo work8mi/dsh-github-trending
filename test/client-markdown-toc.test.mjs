@@ -168,3 +168,69 @@ test('renderMetaTable：核心新增字段不被丢弃，追加在已知字段�
 test('renderMetaTable：meta 为空返回 null（不渲染空表）', () => {
   assert.equal(markdown.renderMetaTable({}, ['date', 'count']), null);
 });
+
+/** 把 createElement 结果（children 可能是数组套数组）摊平成元素列表。 */
+function flattenTrees(nodes, out = []) {
+  if (nodes === null || typeof nodes !== 'object') return out;
+  if (Array.isArray(nodes)) {
+    nodes.forEach((node) => flattenTrees(node, out));
+    return out;
+  }
+  out.push(nodes);
+  if (Array.isArray(nodes.children)) nodes.children.forEach((node) => flattenTrees(node, out));
+  return out;
+}
+
+test('renderMarkdown：排行榜表启用紧凑布局，数字列定宽右对齐、标签独立、长摘要折叠', () => {
+  const long = 'A'.repeat(120);
+  const rendered = markdown.renderMarkdown(
+    [
+      '| 仓库 | Stars | 今日新增 | 摘要 |',
+      '| --- | ---: | ---: | --- |',
+      '| anthropics/skills | 192,382 | +1,679 | [原文] 简要说明 |',
+      `| meta/astryx | 22,991 | +3,108 | [原文] ${long} |`,
+    ].join('\n'),
+  );
+  const trees = flattenTrees(rendered.nodes);
+  const table = trees.find((node) => node.type === 'table');
+  assert.ok(table, '应渲染出表格');
+  assert.match(table.props.className, /dshgt-md-table--compact/, '排行榜表应走紧凑布局');
+
+  const cells = (type) => trees.filter((node) => node.type === type);
+  const head = cells('th');
+  assert.deepEqual(
+    head.map((node) => node.props.className ?? ''),
+    ['', 'dshgt-md-num', 'dshgt-md-num', ''],
+    '只有数字列带 dshgt-md-num',
+  );
+  assert.deepEqual(
+    head.map((node) => node.props.style?.textAlign),
+    [undefined, 'right', 'right', undefined],
+    '只有数字列表头右对齐；列宽由 CSS 的 fixed 布局给出，不写死行内像素宽',
+  );
+  assert.ok(
+    head.every((node) => node.props.scope === 'col'),
+    '表头单元格应声明 scope=col',
+  );
+  assert.deepEqual(
+    trees
+      .filter((node) => node.type === 'td')
+      .slice(0, 4)
+      .map((node) => node.props['data-label']),
+    ['仓库', 'Stars', '今日新增', '摘要'],
+    '单元格带 data-label：窄面板堆叠布局靠它给数字补回单位',
+  );
+
+  const tag = trees.find((node) => node.props?.className === 'dshgt-md-tag');
+  assert.equal(tag?.children?.[0], '原文', '摘要开头的 [原文] 应渲染成独立标签');
+  const clamp = trees.find((node) => node.props?.className === 'dshgt-md-clamp');
+  assert.ok(clamp, '超长摘要应折叠');
+  assert.equal(clamp.props.title, `[原文] ${long}`, '折叠单元格的 title 必须是全文');
+});
+
+test('renderMarkdown：普通表格保持自动布局（不启用紧凑样式）', () => {
+  const rendered = markdown.renderMarkdown('| 字段 | 值 |\n| --- | --- |\n| 日期 | 2026-11-11 |');
+  const json = JSON.stringify(rendered.nodes);
+  assert.ok(!json.includes('dshgt-md-table--compact'), '两列表不应变紧凑');
+  assert.ok(!json.includes('dshgt-md-tag'), '普通表格不抽标签');
+});

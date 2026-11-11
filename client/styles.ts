@@ -368,11 +368,45 @@ export const CSS = `
 .dshgt-md-table th{background:color-mix(in srgb,var(--gt-fg) 4%,var(--gt-card));font-weight:600;white-space:nowrap;}
 .dshgt-md-table tbody tr:last-child td{border-bottom:0;}
 .dshgt-md-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--gt-fg) 2%,var(--gt-card));}
+/* 排行榜表：仓库 / Stars / 今日新增 / 摘要。自动布局 + 摘要换行让窄栏不再横向滚动，
+   数字列定宽右对齐，仓库列按内容取宽（不截断 owner/repo）。 */
+.dshgt-md-table--compact{table-layout:auto;min-width:0;}
+/* 表格能拿到的宽度 = 面板/抽屉的实际宽度，与窗口宽度无关，所以窄屏改判必须用容器查询。 */
+.dshgt-md-tablewrap--compact{container-type:inline-size;}
+.dshgt-md-table--compact th,.dshgt-md-table--compact td{padding:9px 12px;vertical-align:top;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
+.dshgt-md-table--compact th{background:transparent;border-bottom:1px solid var(--gt-border);font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--gt-muted);}
+.dshgt-md-table--compact tbody tr:nth-child(even){background:transparent;}
+.dshgt-md-table--compact tbody tr:hover td{background:color-mix(in srgb,var(--gt-fg) 3%,var(--gt-card));}
+.dshgt-md-table--compact tbody tr:last-child td{border-bottom:0;}
+.dshgt-md-table--compact td:first-child,.dshgt-md-table--compact th:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dshgt-md-table--compact td:first-child{font-weight:600;}
+.dshgt-md-table--compact td:first-child .dshgt-md-repo{background:none;padding:0;font-size:12.5px;font-weight:inherit;}
+.dshgt-md-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.dshgt-md-table--compact .dshgt-md-num{width:88px;}
+.dshgt-md-table--compact td.dshgt-md-num{text-align:right;font-size:12.5px;padding-right:16px;color:color-mix(in srgb,var(--gt-fg) 88%,var(--gt-muted));}
+.dshgt-md-clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.65;}
+/* 降级来源这类行内标签只是注记，不做成彩色 chip、也不加重字重：每行一个色块会让整张表变吵。 */
+.dshgt-md-tag{margin-right:6px;font-size:10px;font-weight:500;letter-spacing:.04em;color:var(--gt-muted);white-space:nowrap;}
 .dshgt-md-pre{margin:12px 0;padding:12px 14px;border-radius:8px;background:color-mix(in srgb,var(--gt-fg) 5%,var(--gt-card));overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;}
 .dshgt-md-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:color-mix(in srgb,var(--gt-fg) 7%,var(--gt-card));padding:1px 4px;border-radius:4px;}
 .dshgt-md-hr{border:0;border-top:1px solid var(--gt-border);margin:18px 0;}
 .dshgt-md a{color:var(--gt-accent);text-decoration:none;}
 .dshgt-md a:hover{text-decoration:underline;}
+/* 表格拿到的宽度不够排四列时（插件侧栏常见宽度），每行堆叠成「仓库 / 数字 / 摘要」三段，
+   列头隐藏，数字用 data-label 补回单位，避免两个数字并排却看不出含义。 */
+@container (max-width:700px){
+  .dshgt-md-tablewrap--compact{border:0;border-radius:0;overflow:visible;}
+  .dshgt-md-table--compact{display:block;border-collapse:separate;}
+  .dshgt-md-table--compact thead{display:none;}
+  .dshgt-md-table--compact tbody{display:block;}
+  .dshgt-md-table--compact tbody tr{display:flex;flex-wrap:wrap;gap:2px 10px;padding:10px 0;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
+  .dshgt-md-table--compact tbody tr:last-child{border-bottom:0;}
+  .dshgt-md-table--compact td{display:block;width:auto;padding:0;border:0;}
+  .dshgt-md-table--compact td:first-child{order:1;flex:1 1 100%;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dshgt-md-table--compact td.dshgt-md-num{order:2;flex:0 0 auto;width:auto;font-size:12px;text-align:left;padding-right:0;}
+  .dshgt-md-table--compact td.dshgt-md-num::before{content:attr(data-label);margin-right:4px;font-size:10px;font-weight:500;letter-spacing:.02em;color:var(--gt-muted);}
+  .dshgt-md-table--compact td:last-child{order:3;flex:1 1 100%;}
+}
 
 /* ——— 周期标签 / 分段 ——— */
 .dshgt-pchip{display:inline-flex;align-items:center;justify-content:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:600;line-height:18px;white-space:nowrap;border:1px solid var(--gt-border);color:var(--gt-muted);background:var(--gt-bg);}
