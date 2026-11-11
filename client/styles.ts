@@ -51,6 +51,8 @@ export const CSS = `
 .dshgt-default{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--gt-border);border-radius:9px;padding:10px 12px;background:var(--dsw-alias-bg-layer-2,var(--gt-card));}
 .dshgt-btn-danger{background:transparent;border-color:var(--gt-err);color:var(--gt-err);}
 .dshgt-btn-sm{padding:3px 8px;font-size:12px;}
+.dshgt-btn-ghost{border-color:transparent;background:transparent;color:var(--gt-muted);}
+.dshgt-btn-ghost:hover:not(:disabled){border-color:var(--gt-border);background:color-mix(in srgb,var(--gt-fg) 5%,transparent);color:var(--gt-fg);}
 .dshgt-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gt-border);border-radius:999px;padding:2px 9px;font-size:12px;background:var(--gt-bg);}
 .dshgt-dot{width:7px;height:7px;border-radius:50%;background:var(--gt-muted);flex:none;}
 .dshgt-dot.ok{background:var(--gt-ok);} .dshgt-dot.warn{background:var(--gt-warn);} .dshgt-dot.err{background:var(--gt-err);}
@@ -318,40 +320,117 @@ export const CSS = `
 .dshgt-spinner{width:13px;height:13px;border-radius:50%;border:1.6px solid var(--gt-border);border-top-color:var(--gt-accent);animation:dshgt-spin .8s linear infinite;display:inline-block;flex:none;}
 @keyframes dshgt-spin{to{transform:rotate(360deg);}}
 
-/* ——— 日报 ——— */
-/* 日报不再自己限宽 / 居中：整页与其它四个 tab 共用 .dshgt-view 的内容框，
-   工具栏和纸面左右边缘和页头、正文完全对齐。 */
-.dshgt-digest{gap:12px;}
-.dshgt-digest-subbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.dshgt-datenav{display:flex;align-items:center;gap:2px;border:1px solid var(--gt-border);border-radius:8px;background:var(--gt-card);padding:2px;}
-.dshgt-icon-btn{width:28px;height:28px;display:grid;place-items:center;border:1px solid transparent;background:var(--gt-bg);border-radius:6px;color:var(--gt-fg);font-family:inherit;font-size:18px;line-height:1;cursor:pointer;flex:none;}
-.dshgt-icon-btn:hover:not(:disabled){background:color-mix(in srgb,var(--gt-fg) 7%,var(--gt-bg));border-color:var(--gt-border);}
-.dshgt-icon-btn:disabled{opacity:.3;cursor:not-allowed;}
-.dshgt-dateselect{appearance:none;height:28px;border:0;background:transparent;font-family:inherit;font-size:13px;color:var(--gt-fg);padding:0 8px;min-width:210px;max-width:320px;cursor:pointer;}
-/* 日报预览纸面：铺满统一内容框；阅读行宽由内边距与字号控制。 */
-.dshgt-digest-sheet{width:100%;border:1px solid var(--gt-border);border-radius:12px;background:var(--gt-card);overflow:hidden;}
-.dshgt-digest-body{display:flex;flex-direction:column;min-width:0;}
-.dshgt-digest-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 70%,transparent);background:color-mix(in srgb,var(--gt-fg) 2.5%,var(--gt-card));}
+/* ——— 榜单（日榜 / 周榜 / 月榜） ——— */
+/* 三层：工具条（周期 + 期数）→ 概览（三个真实数字 + 文件信息）→ 纸面。
+   颜色全部由 --gt-* 派生，宿主深浅主题都跟随；这里只重建层级、留白与字号。 */
+.dshgt-digest{gap:16px;}
+
+/* 工具条：分段控件与期数导航是两种不同粒度的选择，并排但各成一体的控件。 */
+.dshgt-board-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;}
+.dshgt-segmented{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--gt-border);border-radius:10px;background:color-mix(in srgb,var(--gt-fg) 3%,var(--gt-card));}
+.dshgt-segmented button{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:0;border-radius:8px;background:none;font:inherit;font-size:13px;color:var(--gt-muted);cursor:pointer;transition:color .12s ease,background .12s ease;}
+.dshgt-segmented button:hover{color:var(--gt-fg);}
+.dshgt-segmented button.on{background:var(--gt-bg);color:var(--gt-fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.16);}
+.dshgt-segmented-count{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;padding:0 5px;border-radius:999px;background:color-mix(in srgb,var(--gt-fg) 8%,transparent);color:var(--gt-muted);}
+.dshgt-segmented button.on .dshgt-segmented-count{background:color-mix(in srgb,var(--gt-accent) 16%,transparent);color:var(--gt-accent);}
+/* 期数导航：‹ 日期/状态 ›，日期是一等信息，具体跳到哪一期交给隐形 select。 */
+.dshgt-issue-nav{display:inline-flex;align-items:stretch;gap:2px;padding:3px;border:1px solid var(--gt-border);border-radius:10px;background:var(--gt-card);}
+.dshgt-nav-btn{width:30px;border:0;border-radius:7px;background:none;color:var(--gt-muted);font:inherit;font-size:18px;line-height:1;cursor:pointer;flex:none;}
+.dshgt-nav-btn:hover:not(:disabled){background:color-mix(in srgb,var(--gt-fg) 8%,transparent);color:var(--gt-fg);}
+.dshgt-nav-btn:disabled{opacity:.28;cursor:not-allowed;}
+.dshgt-issue{position:relative;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:136px;padding:2px 10px;border-radius:7px;cursor:pointer;}
+.dshgt-issue:hover{background:color-mix(in srgb,var(--gt-fg) 5%,transparent);}
+.dshgt-issue:focus-within{outline:2px solid var(--gt-accent);outline-offset:1px;}
+.dshgt-issue-date{font-size:13px;font-weight:600;line-height:1.3;letter-spacing:.01em;color:var(--gt-fg);}
+.dshgt-issue-meta{font-size:11px;line-height:1.3;color:var(--gt-muted);}
+.dshgt-issue-select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font:inherit;}
+.dshgt-board-window{font-size:12px;color:var(--gt-muted);}
+
+/* 概览：左三格数字、右文件信息。数字是本期真实统计（正文表格派生），不做估算。 */
+.dshgt-board-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,0.95fr);gap:12px;align-items:stretch;}
+.dshgt-board-card{border:1px solid var(--gt-border);border-radius:14px;background:var(--gt-card);padding:16px 18px;min-width:0;display:flex;flex-direction:column;gap:12px;}
+.dshgt-board-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-content:center;}
+.dshgt-stat{display:flex;flex-direction:column;gap:3px;min-width:0;padding-right:14px;border-right:1px solid color-mix(in srgb,var(--gt-border) 70%,transparent);}
+.dshgt-stat:last-child{padding-right:0;border-right:0;}
+.dshgt-stat-k{font-size:12px;color:var(--gt-muted);letter-spacing:.02em;}
+.dshgt-stat-v{font-size:26px;line-height:1.15;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--gt-fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dshgt-stat-ok .dshgt-stat-v{color:color-mix(in srgb,var(--gt-ok) 74%,var(--gt-fg));}
+.dshgt-stat-warn .dshgt-stat-v{color:color-mix(in srgb,var(--gt-warn) 78%,var(--gt-fg));}
+.dshgt-stat-note{font-size:11.5px;line-height:1.4;color:var(--gt-muted);}
+/* 状态的取值是词不是数字：跟 26px 同字号会喧宾夺主，收到 17px 仍与数字同基线。 */
+.dshgt-stat-status .dshgt-stat-v{font-size:17px;font-weight:600;letter-spacing:0;line-height:1.5;}
+
+/* 文件信息：文件名与状态先读，技术元数据收进「数据详情」。
+   同一行的两张卡用不同表面：数字卡是底色，文件卡抬半层，避免两块同色拼在一起。 */
+.dshgt-board-file{background:color-mix(in srgb,var(--gt-card) 92%,var(--gt-fg) 8%);}
+.dshgt-meta-panel{padding-top:10px;border-top:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
+.dshgt-file-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
+.dshgt-file-name{flex:0 1 auto;max-width:100%;font-size:13px;font-weight:600;color:var(--gt-fg);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dshgt-file-meta{flex:0 0 auto;font-size:12px;color:var(--gt-muted);white-space:nowrap;}
+.dshgt-file-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+/* 状态标签：语义色落在圆点与极淡底色上，文字保持正文色，整页不会变成彩纸。 */
+.dshgt-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;font-size:11.5px;font-weight:500;line-height:1;white-space:nowrap;border:1px solid transparent;color:var(--gt-fg);background:color-mix(in srgb,var(--gt-fg) 6%,transparent);}
+.dshgt-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--gt-muted);flex:none;}
+.dshgt-badge-ok{background:color-mix(in srgb,var(--gt-ok) 11%,transparent);border-color:color-mix(in srgb,var(--gt-ok) 22%,transparent);}
+.dshgt-badge-ok .dshgt-badge-dot{background:var(--gt-ok);}
+.dshgt-badge-warn{background:color-mix(in srgb,var(--gt-warn) 12%,transparent);border-color:color-mix(in srgb,var(--gt-warn) 24%,transparent);}
+.dshgt-badge-warn .dshgt-badge-dot{background:var(--gt-warn);}
+.dshgt-badge-err{background:color-mix(in srgb,var(--gt-err) 12%,transparent);border-color:color-mix(in srgb,var(--gt-err) 24%,transparent);}
+.dshgt-badge-err .dshgt-badge-dot{background:var(--gt-err);}
+.dshgt-badge-info{background:color-mix(in srgb,var(--gt-accent) 12%,transparent);border-color:color-mix(in srgb,var(--gt-accent) 24%,transparent);}
+.dshgt-badge-info .dshgt-badge-dot{background:var(--gt-accent);}
+.dshgt-badge-muted .dshgt-badge-dot{background:var(--gt-muted);}
+
+/* 折叠面板（原生 details）：三角用 CSS 画，默认收起，键盘可达。 */
+.dshgt-disclosure{border-top:1px solid color-mix(in srgb,var(--gt-border) 70%,transparent);padding-top:10px;}
+.dshgt-disclosure-summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--gt-muted);list-style:none;user-select:none;}
+.dshgt-disclosure-summary::-webkit-details-marker{display:none;}
+.dshgt-disclosure-summary::before{content:"";width:0;height:0;border-left:4px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .12s ease;}
+.dshgt-disclosure[open] > .dshgt-disclosure-summary::before{transform:rotate(90deg);}
+.dshgt-disclosure-summary:hover{color:var(--gt-fg);}
+.dshgt-disclosure-count{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:0 5px;border-radius:999px;background:color-mix(in srgb,var(--gt-fg) 8%,transparent);}
+.dshgt-disclosure-body{padding-top:10px;}
+
+/* 元数据：窄屏自动落成一列，长哈希折行 + 复制，不撑破卡片。 */
+.dshgt-meta-list{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 14px;margin:0;font-size:12px;align-items:baseline;}
+.dshgt-meta-list dt{color:var(--gt-muted);white-space:nowrap;}
+.dshgt-meta-list dd{margin:0;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.dshgt-meta-val{overflow-wrap:anywhere;font-size:12px;color:var(--gt-fg);}
+.dshgt-meta-hash .dshgt-meta-val{font-size:11.5px;color:var(--gt-muted);}
+.dshgt-meta-copy{appearance:none;flex:none;border:1px solid var(--gt-border);background:none;color:var(--gt-muted);border-radius:6px;font:inherit;font-size:11px;padding:1px 7px;cursor:pointer;}
+.dshgt-meta-copy:hover{color:var(--gt-fg);border-color:color-mix(in srgb,var(--gt-accent) 40%,var(--gt-border));}
+
+/* 降级提示：页面上只出现这一处；原因默认收起。 */
+.dshgt-notice{display:flex;align-items:flex-start;gap:11px;padding:13px 15px;border:1px solid color-mix(in srgb,var(--gt-warn) 30%,var(--gt-border));border-radius:12px;background:color-mix(in srgb,var(--gt-warn) 8%,var(--gt-bg));}
+.dshgt-notice-mark{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;margin-top:1px;background:color-mix(in srgb,var(--gt-warn) 22%,transparent);color:color-mix(in srgb,var(--gt-warn) 80%,var(--gt-fg));font-size:12px;font-weight:700;line-height:1;}
+.dshgt-notice-body{display:flex;flex-direction:column;gap:4px;min-width:0;}
+.dshgt-notice-title{font-size:12.5px;font-weight:600;color:var(--gt-fg);}
+.dshgt-notice-text{margin:0;font-size:12px;line-height:1.6;color:var(--gt-muted);}
+.dshgt-notice-more{font-size:12px;color:var(--gt-muted);}
+.dshgt-notice-more summary{cursor:pointer;color:var(--gt-accent);font-size:12px;width:max-content;}
+.dshgt-notice-reason{margin:6px 0 0;font-size:12px;line-height:1.65;color:var(--gt-fg);}
+
+/* 纸面：日报正文铺在卡片上，行宽收在便于阅读的一档。 */
+.dshgt-board-sheet{border:1px solid var(--gt-border);border-radius:14px;background:var(--gt-card);overflow:hidden;}
+.dshgt-board-doc{padding:26px 32px 30px;min-width:0;}
 .dshgt-seg{display:inline-flex;border:1px solid var(--gt-border);border-radius:8px;padding:2px;background:var(--gt-bg);gap:2px;}
-.dshgt-seg button{border:0;background:none;height:26px;padding:0 11px;border-radius:6px;font-family:inherit;font-size:12.5px;color:var(--gt-muted);cursor:pointer;}
+.dshgt-seg button{border:0;background:none;height:24px;padding:0 10px;border-radius:6px;font-family:inherit;font-size:12px;color:var(--gt-muted);cursor:pointer;}
 .dshgt-seg button.on{background:var(--gt-card);color:var(--gt-fg);font-weight:600;white-space:nowrap;}
-.dshgt-digest-doc{padding:26px 32px 22px;min-width:0;}
 .dshgt-doc-meta-table{margin:0 0 18px;}
 .dshgt-doc-meta.dshgt-md-table{min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;}
 .dshgt-doc-meta .dshgt-doc-meta-key{width:1%;white-space:nowrap;font-weight:600;color:var(--gt-muted);background:color-mix(in srgb,var(--gt-fg) 4%,var(--gt-card));}
 .dshgt-doc-meta .dshgt-doc-meta-val{color:var(--gt-fg);word-break:break-word;overflow-wrap:anywhere;}
 .dshgt-doc-meta-hash{font-size:11.5px;}
-.dshgt-degraded-badge{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:9px 12px;border:1px solid color-mix(in srgb,var(--gt-warn,#c08a00) 45%,var(--gt-border));border-radius:8px;font-size:12px;line-height:1.5;color:var(--gt-fg);background:color-mix(in srgb,var(--gt-warn,#c08a00) 12%,transparent);}
-.dshgt-degraded-icon{font-size:14px;line-height:1;}
 .dshgt-digest-raw{margin:0;padding:22px 28px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.75;white-space:pre-wrap;word-break:break-word;color:var(--gt-muted);background:color-mix(in srgb,var(--gt-fg) 2.5%,var(--gt-card));max-height:640px;overflow:auto;}
 .dshgt-digest-loading{padding:40px 28px;color:var(--gt-muted);font-size:13px;}
-.dshgt-digest-empty{padding:42px 36px 46px;}
+.dshgt-digest-empty{padding:34px 28px 36px;gap:6px;}
 .dshgt-status-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--gt-muted);}
 .dshgt-status-line b{color:var(--gt-fg);font-weight:600;white-space:nowrap;}
-.dshgt-digest-empty h2{margin:14px 0 6px;font-size:20px;font-weight:650;letter-spacing:-.012em;}
-.dshgt-digest-empty p{margin:0;max-width:580px;font-size:13.5px;line-height:1.7;color:var(--gt-muted);}
-.dshgt-digest-error{margin-top:10px;color:var(--gt-err);}
-.dshgt-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+.dshgt-digest-empty h2{margin:10px 0 2px;font-size:19px;font-weight:650;letter-spacing:-.012em;color:var(--gt-fg);}
+.dshgt-digest-empty p{margin:0;max-width:580px;font-size:13px;line-height:1.7;color:var(--gt-muted);}
+.dshgt-digest-error{margin-top:8px;color:var(--gt-err);}
+.dshgt-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
 .dshgt-md{font-size:14px;line-height:1.7;color:var(--gt-fg);word-break:break-word;}
 .dshgt-md-h{margin:20px 0 8px;font-weight:650;line-height:1.35;letter-spacing:-.01em;}
 .dshgt-md-h1{font-size:24px;margin-top:0;}
@@ -378,9 +457,16 @@ export const CSS = `
 .dshgt-md-table--compact tbody tr:nth-child(even){background:transparent;}
 .dshgt-md-table--compact tbody tr:hover td{background:color-mix(in srgb,var(--gt-fg) 3%,var(--gt-card));}
 .dshgt-md-table--compact tbody tr:last-child td{border-bottom:0;}
-.dshgt-md-table--compact td:first-child,.dshgt-md-table--compact th:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.dshgt-md-table--compact td:first-child{font-weight:600;}
-.dshgt-md-table--compact td:first-child .dshgt-md-repo{background:none;padding:0;font-size:12.5px;font-weight:inherit;}
+.dshgt-md-table--compact td:nth-child(2),.dshgt-md-table--compact th:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dshgt-md-table--compact td:nth-child(2){font-weight:600;}
+.dshgt-md-table--compact td:nth-child(2) .dshgt-md-repo{background:none;padding:0;font-size:12.5px;font-weight:inherit;}
+.dshgt-md-table--compact .dshgt-md-rank{width:44px;padding-right:0;padding-left:16px;text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--gt-muted);font-variant-numeric:tabular-nums;}
+.dshgt-md-repolink{display:inline-flex;align-items:baseline;gap:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-decoration:none;}
+.dshgt-md-repolink:hover .dshgt-md-name{text-decoration:underline;text-underline-offset:3px;}
+.dshgt-md-org{color:var(--gt-muted);font-weight:500;}
+.dshgt-md-name{color:var(--gt-fg);font-weight:600;}
+.dshgt-md-growth{font-variant-numeric:tabular-nums;font-weight:600;color:color-mix(in srgb,var(--gt-ok) 74%,var(--gt-fg));}
+.dshgt-md-growth.is-down{color:color-mix(in srgb,var(--gt-err) 80%,var(--gt-fg));}
 .dshgt-md-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .dshgt-md-table--compact .dshgt-md-num{width:88px;}
 .dshgt-md-table--compact td.dshgt-md-num{text-align:right;font-size:12.5px;padding-right:16px;color:color-mix(in srgb,var(--gt-fg) 88%,var(--gt-muted));}
@@ -399,10 +485,11 @@ export const CSS = `
   .dshgt-md-table--compact{display:block;border-collapse:separate;}
   .dshgt-md-table--compact thead{display:none;}
   .dshgt-md-table--compact tbody{display:block;}
-  .dshgt-md-table--compact tbody tr{display:flex;flex-wrap:wrap;gap:2px 10px;padding:10px 0;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
+  .dshgt-md-table--compact tbody tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:11px 0;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
   .dshgt-md-table--compact tbody tr:last-child{border-bottom:0;}
   .dshgt-md-table--compact td{display:block;width:auto;padding:0;border:0;}
-  .dshgt-md-table--compact td:first-child{order:1;flex:1 1 100%;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dshgt-md-table--compact td.dshgt-md-rank{order:0;flex:0 0 auto;width:auto;padding:1px 2px 0 0;font-size:11px;}
+  .dshgt-md-table--compact td:nth-child(2){order:1;flex:1 1 0;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dshgt-md-table--compact td.dshgt-md-num{order:2;flex:0 0 auto;width:auto;font-size:12px;text-align:left;padding-right:0;}
   .dshgt-md-table--compact td.dshgt-md-num::before{content:attr(data-label);margin-right:4px;font-size:10px;font-weight:500;letter-spacing:.02em;color:var(--gt-muted);}
   .dshgt-md-table--compact td:last-child{order:3;flex:1 1 100%;}
@@ -585,7 +672,7 @@ export const CSS = `
 .dshgt-subs-vol .label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 .dshgt-subs-drawer-note{margin-top:auto;padding-top:12px;border-top:1px solid var(--gt-border);font-size:11.5px;color:var(--gt-muted);line-height:1.65;word-break:break-word;}
 .dshgt-subs-drawer-raw{margin:0;padding:12px 14px;border-radius:8px;background:color-mix(in srgb,var(--gt-fg) 5%,var(--gt-card));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:break-word;}
-/* 抽屉正文纸面：md 铺在卡面上（与日报预览 .dshgt-digest-sheet 同一观感），不再直接贴页面底色。 */
+/* 抽屉正文纸面：md 铺在卡面上（与榜单纸面 .dshgt-board-sheet 同一观感），不再直接贴页面底色。 */
 .dshgt-subs-drawer-doc{border:1px solid var(--gt-border);border-radius:10px;background:var(--dsw-alias-bg-layer-2,var(--gt-card));padding:14px 16px;}
 .dshgt-subs-drawer-doc .dshgt-subs-drawer-raw{background:transparent;padding:0;}
 /* 抽屉专用紧凑 md 排版：覆盖日报的大号 .dshgt-md（h1 24 / h2 18），保留结构其余样式。 */
@@ -619,7 +706,7 @@ export const CSS = `
 .dshgt-addmodal-input{height:34px;width:100%;}
 .dshgt-addmodal-err{color:var(--gt-err);}
 /* 键盘焦点：可交互元素统一给可见焦点环；此前只有少数自定义控件有，Tab 走查会跟丢。 */
-.dshgt-btn:focus-visible,.dshgt-chip:focus-visible,.dshgt-tab:focus-visible,.dshgt-vtab:focus-visible,.dshgt-day:focus-visible,.dshgt-linkbtn:focus-visible,.dshgt-icon-btn:focus-visible,.dshgt-fact-copy:focus-visible,.dshgt-alert-dismiss:focus-visible,.dshgt-period-seg button:focus-visible,.dshgt-seg button:focus-visible,.dshgt-subs-th:focus-visible,.dshgt-subs-act:focus-visible,.dshgt-about-pkglink:focus-visible{outline:2px solid var(--gt-accent);outline-offset:2px;}
+.dshgt-btn:focus-visible,.dshgt-chip:focus-visible,.dshgt-tab:focus-visible,.dshgt-vtab:focus-visible,.dshgt-day:focus-visible,.dshgt-linkbtn:focus-visible,.dshgt-icon-btn:focus-visible,.dshgt-fact-copy:focus-visible,.dshgt-alert-dismiss:focus-visible,.dshgt-period-seg button:focus-visible,.dshgt-seg button:focus-visible,.dshgt-segmented button:focus-visible,.dshgt-nav-btn:focus-visible,.dshgt-issue:focus-within,.dshgt-meta-copy:focus-visible,.dshgt-disclosure-summary:focus-visible,.dshgt-notice-more summary:focus-visible,.dshgt-md-repolink:focus-visible,.dshgt-subs-th:focus-visible,.dshgt-subs-act:focus-visible,.dshgt-about-pkglink:focus-visible{outline:2px solid var(--gt-accent);outline-offset:2px;}
 @media (max-width:1040px){
   .dshgt-subs-thead,.dshgt-subs-row{grid-template-columns:240px 120px 110px minmax(0,1fr);}
   .dshgt-subs-sum,.dshgt-subs-th-summary{display:none;}
@@ -652,12 +739,12 @@ export const CSS = `
   .dshgt-run-item.has-tokens .dshgt-run-row{grid-template-columns:18px 104px 52px minmax(0,1fr) 58px 70px 20px;}
   .dshgt-run-files{display:none;}
   .dshgt-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .dshgt-dateselect{min-width:180px;}
 }
 @media (max-width:980px){
   .dshgt-page-head h1{font-size:19px;}
   .dshgt-dek{font-size:12.5px;}
   .dshgt-main-body > .dshgt-settings{padding-block:16px 18px;}
+  .dshgt-board-grid{grid-template-columns:minmax(0,1fr);}
 }
 @media (max-width:760px){
   .dshgt-app{--dshgt-gutter:18px;}
@@ -683,8 +770,16 @@ export const CSS = `
   .dshgt-fact{padding:0;}
   .dshgt-fact + .dshgt-fact{border-left:0;padding-top:8px;border-top:1px solid color-mix(in srgb,var(--gt-border) 70%,transparent);}
   .dshgt-detail-grid{grid-template-columns:minmax(0,1fr);}
+  .dshgt-board-bar{gap:8px;}
+  .dshgt-issue{min-width:120px;}
+  .dshgt-board-doc{padding:18px 16px 22px;}
+  .dshgt-board-card{padding:14px 15px;}
 }
 @media (max-width:560px){
+  .dshgt-board-stats{grid-template-columns:minmax(0,1fr);gap:10px;}
+  .dshgt-stat{padding-right:0;border-right:0;padding-bottom:8px;border-bottom:1px solid color-mix(in srgb,var(--gt-border) 60%,transparent);}
+  .dshgt-stat:last-child{padding-bottom:0;border-bottom:0;}
+  .dshgt-segmented button{padding:0 9px;}
   .dshgt-modal{width:calc(100% - 20px);padding:14px;max-height:88vh;}
   .dshgt-about{max-width:none;}
   .dshgt-about-identity{margin:-14px -14px 0;padding:14px;}
@@ -720,3 +815,8 @@ export function injectStyles(): () => void {
     style.remove();
   };
 }
+
+
+
+
+

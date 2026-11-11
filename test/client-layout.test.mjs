@@ -35,7 +35,8 @@ test('外壳与五个视图共用 --dshgt-frame / --dshgt-inset 内容框', () =
 test('视图内部不再各自限宽或居中', () => {
   assert.doesNotMatch(css, /max-width:920px/);
   assert.doesNotMatch(css, /max-width:1240px/);
-  assert.doesNotMatch(rule('.dshgt-digest-sheet'), /max-width/);
+  assert.doesNotMatch(rule('.dshgt-board-sheet'), /max-width/);
+  assert.doesNotMatch(rule('.dshgt-board-doc'), /max-width/);
   assert.doesNotMatch(rule('.dshgt-digest-empty'), /max-width/);
 });
 
@@ -49,3 +50,4 @@ test('身份条动作区紧跟包名，确认气泡贴左', () => {
   assert.match(actions, /flex:none/);
   assert.match(rule('.dshgt-confirm-pop'), /left:0/);
 });
+

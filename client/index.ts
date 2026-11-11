@@ -310,6 +310,7 @@ export function apply(ctx: any): void {
                       Btn,
                       {
                         key: 'dry',
+                        variant: 'ghost',
                         onClick: () => void controller.run(true),
                         disabled: controller.running || controller.busy || !canRun,
                         title: t('run.dryRun.hint'),

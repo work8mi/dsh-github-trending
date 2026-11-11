@@ -20,10 +20,12 @@ export interface RenderedMarkdown {
   nodes: any[];
   /** 正文里出现的标题大纲，按出现顺序；没有标题时为空数组。 */
   headings: HeadingToc[];
+  /** 解析后的块列表，与 `nodes` 一一对应；页面要从正文里派生统计（收录数、增长合计）时用。 */
+  blocks: Block[];
 }
 
 /** 从行内节点里抽出纯文本（用于 TOC 标签与锚点 slug）。 */
-function inlineText(nodes: Inline[]): string {
+export function inlineText(nodes: Inline[]): string {
   let text = '';
   for (const node of nodes) {
     if (node.type === 'text') text += node.value;
@@ -135,6 +137,40 @@ function renderCompactCell(cell: Inline[], key: string, clamp: boolean): any {
   return h('div', { key: `${key}-clamp`, className: 'dshgt-md-clamp', title: full }, flow);
 }
 
+/** 单格就是 `owner/repo` 链接时，把组织名与仓库名分开：组织名压暗、仓库名保持正文色。 */
+function renderRepoLink(cell: Inline[], key: string): any {
+  const only = cell[0];
+  if (cell.length === 1 && only !== undefined && only.type === 'link') {
+    const text = inlineText(only.children);
+    const slash = text.indexOf('/');
+    if (slash > 0 && slash < text.length - 1 && !/\s/.test(text)) {
+      return h(
+        'a',
+        { key, href: only.href, target: '_blank', rel: 'noreferrer', className: 'dshgt-md-repolink' },
+        h('span', { key: `${key}-org`, className: 'dshgt-md-org' }, text.slice(0, slash + 1)),
+        h('span', { key: `${key}-name`, className: 'dshgt-md-name' }, text.slice(slash + 1)),
+      );
+    }
+  }
+  return renderInline(cell, key);
+}
+
+/** 「今日新增」这类带符号的数字列：正增长上绿、负值上红，其余保持中性数字。 */
+const GROWTH_VALUE = /^[+-][\d,]+$/;
+
+function renderCellValue(cell: Inline[], key: string, growth: boolean): any {
+  const flow = renderInline(cell, key);
+  if (!growth) return flow;
+  const text = inlineText(cell).trim();
+  if (!GROWTH_VALUE.test(text)) return flow;
+  return h('span', { key: `${key}-growth`, className: text.startsWith('-') ? 'dshgt-md-growth is-down' : 'dshgt-md-growth' }, flow);
+}
+
+/** compact 表里除仓库列之外的值：数字列原样（增长列上色），文本列抽标签 + 长摘要折叠。 */
+function compactCellValue(cell: Inline[], key: string, growth: boolean, numeric: boolean): any {
+  return growth ? renderCellValue(cell, key, true) : renderCompactCell(cell, key, !numeric);
+}
+
 function renderBlock(block: Block, key: string, headingId?: string): any {
   switch (block.type) {
     case 'heading': {
@@ -164,12 +200,18 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
     case 'hr':
       return h('hr', { key, className: 'dshgt-md-hr' });
     case 'table': {
-      // 「排行榜」形态：≥3 列且存在右对齐数字列。只有这种表换成紧凑的固定布局，
+      // 「排行榜」形态：≥3 列且存在右对齐数字列。只有这种表换成带排名列的排行榜，
       // 其它表格（元信息、任意 markdown 表）保持原有的自动布局与横向滚动。
       const compact = block.header.length >= 3 && block.align.some((align) => align === 'right');
       // 列宽交给 CSS（数字列定宽、仓库列随内容），行内样式只留对齐：
       // 写死的像素宽度没法跟着面板宽度与容器查询一起收放。
       const isNumeric = (index: number): boolean => block.align[index] === 'right';
+      const headerText = (index: number): string => {
+        const cell = block.header[index];
+        return cell === undefined ? '' : inlineText(cell);
+      };
+      // 「今日新增 / New stars」这类列是增长量，单独上色；Stars 总量仍是中性数字。
+      const isGrowth = (index: number): boolean => compact && isNumeric(index) && /新增|new/i.test(headerText(index));
       return h(
         'div',
         { key, className: compact ? 'dshgt-md-tablewrap dshgt-md-tablewrap--compact' : 'dshgt-md-tablewrap' },
@@ -182,6 +224,7 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
             h(
               'tr',
               null,
+              compact ? h('th', { key: 'rank', scope: 'col', className: 'dshgt-md-rank' }, '#') : null,
               block.header.map((cell, index) =>
                 h(
                   'th',
@@ -203,8 +246,10 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
               h(
                 'tr',
                 { key: `r${rowIndex}` },
+                compact ? h('td', { key: 'rank', className: 'dshgt-md-rank' }, String(rowIndex + 1)) : null,
                 row.map((cell, cellIndex) => {
                   const label = block.header[cellIndex];
+                  const growth = isGrowth(cellIndex);
                   return h(
                     'td',
                     {
@@ -214,9 +259,11 @@ function renderBlock(block: Block, key: string, headingId?: string): any {
                       // 窄面板下表格会堆叠成卡片，列头隐藏后靠这个属性给数字补回单位。
                       ...(compact && label !== undefined ? { 'data-label': inlineText(label) } : {}),
                     },
-                    compact
-                      ? renderCompactCell(cell, `${key}-r${rowIndex}c${cellIndex}`, !isNumeric(cellIndex))
-                      : renderInline(cell, `${key}-r${rowIndex}c${cellIndex}`),
+                    compact && cellIndex === 0
+                      ? renderRepoLink(cell, `${key}-r${rowIndex}c${cellIndex}`)
+                      : compact
+                        ? compactCellValue(cell, `${key}-r${rowIndex}c${cellIndex}`, growth, isNumeric(cellIndex))
+                        : renderInline(cell, `${key}-r${rowIndex}c${cellIndex}`),
                   );
                 }),
               ),
@@ -277,6 +324,48 @@ export function renderMetaTable(meta: Record<string, string>, order: readonly st
   );
 }
 
+/** 榜单概览从正文派生的三个数字；全部来自本期真实表格，不做任何估算。 */
+export interface BoardStats {
+  /** 去重后的仓库数：同一仓库出现在多个语言榜里只算一次。 */
+  repos: number;
+  /** 去重后各仓库「今日新增」之和。 */
+  newStars: number;
+  /** 正文里的语言分区数（二级标题个数）。 */
+  languages: number;
+}
+
+/**
+ * 从解析后的块里数出概览数字。增长列按列头识别（核心写「今日新增 / New」），
+ * 同一仓库只取第一次出现的那一行，避免多语言榜重复累加把总量放大。
+ */
+export function collectBoardStats(blocks: Block[]): BoardStats {
+  const seen = new Set<string>();
+  let newStars = 0;
+  let languages = 0;
+  for (const block of blocks) {
+    if (block.type === 'heading') {
+      if (block.level === 2) languages += 1;
+      continue;
+    }
+    if (block.type !== 'table') continue;
+    const growthCol = block.header.findIndex((cell) => /新增|new/i.test(inlineText(cell)));
+    for (const row of block.rows) {
+      const first = row[0];
+      const repo = first === undefined ? '' : inlineText(first).trim();
+      if (repo === '') continue;
+      const key = repo.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (growthCol === -1) continue;
+      const raw = row[growthCol];
+      const match = raw === undefined ? null : /[+-]?[\d,]+/.exec(inlineText(raw));
+      const amount = match === null ? 0 : Number(match[0].replace(/,/g, ''));
+      if (Number.isFinite(amount)) newStars += amount;
+    }
+  }
+  return { repos: seen.size, newStars, languages };
+}
+
 export function renderMarkdown(markdown: string): RenderedMarkdown {
   const parsed = parseMarkdown(markdown);
   // 先给每个标题块分配去重后的锚点 id，同时收集 TOC；再按块渲染，把 id 挂到 heading 元素上。
@@ -299,5 +388,6 @@ export function renderMarkdown(markdown: string): RenderedMarkdown {
     meta: parsed.meta,
     nodes: parsed.blocks.map((block, index) => renderBlock(block, `b${index}`, idByBlock.get(index))),
     headings,
+    blocks: parsed.blocks,
   };
 }

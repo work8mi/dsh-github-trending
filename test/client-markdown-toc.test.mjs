@@ -181,13 +181,13 @@ function flattenTrees(nodes, out = []) {
   return out;
 }
 
-test('renderMarkdown：排行榜表启用紧凑布局，数字列定宽右对齐、标签独立、长摘要折叠', () => {
+test('renderMarkdown：排行榜表启用紧凑布局，排名、组织拆分、增长标识与长摘要折叠', () => {
   const long = 'A'.repeat(120);
   const rendered = markdown.renderMarkdown(
     [
       '| 仓库 | Stars | 今日新增 | 摘要 |',
       '| --- | ---: | ---: | --- |',
-      '| anthropics/skills | 192,382 | +1,679 | [原文] 简要说明 |',
+      '| [anthropics/skills](https://github.com/anthropics/skills) | 192,382 | +1,679 | [原文] 简要说明 |',
       `| meta/astryx | 22,991 | +3,108 | [原文] ${long} |`,
     ].join('\n'),
   );
@@ -200,26 +200,41 @@ test('renderMarkdown：排行榜表启用紧凑布局，数字列定宽右对齐
   const head = cells('th');
   assert.deepEqual(
     head.map((node) => node.props.className ?? ''),
-    ['', 'dshgt-md-num', 'dshgt-md-num', ''],
-    '只有数字列带 dshgt-md-num',
+    ['dshgt-md-rank', '', 'dshgt-md-num', 'dshgt-md-num', ''],
+    '排名列单独一类，数字列带 dshgt-md-num',
+  );
+  assert.deepEqual(
+    head.map((node) => [].concat(node.children ?? []).join('')),
+    ['#', '仓库', 'Stars', '今日新增', '摘要'],
+    '排名列在表头最前，其余列顺序不变',
   );
   assert.deepEqual(
     head.map((node) => node.props.style?.textAlign),
-    [undefined, 'right', 'right', undefined],
-    '只有数字列表头右对齐；列宽由 CSS 的 fixed 布局给出，不写死行内像素宽',
+    [undefined, undefined, 'right', 'right', undefined],
+    '只有数字列表头右对齐；列宽交给 CSS，不写死行内像素宽',
   );
   assert.ok(
     head.every((node) => node.props.scope === 'col'),
     '表头单元格应声明 scope=col',
   );
+
+  const bodyCells = cells('td');
+  assert.equal(bodyCells[0].children?.[0], '1', '排名从 1 开始');
+  assert.equal(bodyCells[5].children?.[0], '2', '第二行排名为 2');
   assert.deepEqual(
-    trees
-      .filter((node) => node.type === 'td')
-      .slice(0, 4)
-      .map((node) => node.props['data-label']),
-    ['仓库', 'Stars', '今日新增', '摘要'],
-    '单元格带 data-label：窄面板堆叠布局靠它给数字补回单位',
+    bodyCells.slice(1, 4).map((node) => node.props['data-label']),
+    ['仓库', 'Stars', '今日新增'],
+    '数据列带 data-label：窄面板堆叠布局靠它给数字补回单位',
   );
+
+  const org = trees.find((node) => node.props?.className === 'dshgt-md-org');
+  const name = trees.find((node) => node.props?.className === 'dshgt-md-name');
+  assert.equal(org?.children?.[0], 'anthropics/', '组织名单独一段，带尾部斜杠');
+  assert.equal(name?.children?.[0], 'skills', '仓库名单独一段');
+
+  const growth = trees.filter((node) => node.props?.className === 'dshgt-md-growth');
+  assert.equal(growth.length, 2, '增长列应带增长样式');
+  assert.equal([].concat(growth[0].children ?? []).join(''), '+1,679', '增长值原样保留');
 
   const tag = trees.find((node) => node.props?.className === 'dshgt-md-tag');
   assert.equal(tag?.children?.[0], '原文', '摘要开头的 [原文] 应渲染成独立标签');
@@ -228,9 +243,33 @@ test('renderMarkdown：排行榜表启用紧凑布局，数字列定宽右对齐
   assert.equal(clamp.props.title, `[原文] ${long}`, '折叠单元格的 title 必须是全文');
 });
 
+test('collectBoardStats：仓库去重、增长求和、语言分区计数', () => {
+  const markdownText = [
+    '## all',
+    '',
+    '| 仓库 | Stars | 今日新增 | 摘要 |',
+    '| --- | ---: | ---: | --- |',
+    '| anthropics/skills | 192,382 | +1,679 | 说明 |',
+    '| meta/astryx | 22,991 | +3,108 | 说明 |',
+    '',
+    '## python',
+    '',
+    '| 仓库 | Stars | 今日新增 | 摘要 |',
+    '| --- | ---: | ---: | --- |',
+    '| anthropics/skills | 192,382 | +1,679 | 说明 |',
+    '| tokio-rs/topcoat | 6,853 | -12 | 说明 |',
+  ].join('\n');
+  const stats = markdown.collectBoardStats(markdown.renderMarkdown(markdownText).blocks);
+  assert.deepEqual(stats, { repos: 3, newStars: 1679 + 3108 - 12, languages: 2 });
+});
+
 test('renderMarkdown：普通表格保持自动布局（不启用紧凑样式）', () => {
   const rendered = markdown.renderMarkdown('| 字段 | 值 |\n| --- | --- |\n| 日期 | 2026-11-11 |');
   const json = JSON.stringify(rendered.nodes);
   assert.ok(!json.includes('dshgt-md-table--compact'), '两列表不应变紧凑');
   assert.ok(!json.includes('dshgt-md-tag'), '普通表格不抽标签');
 });
+
+
+
+

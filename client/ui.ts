@@ -143,6 +143,49 @@ export function Alert(props: ChildrenProps & { kind?: 'ok' | 'warn' | 'err'; tit
   );
 }
 
+/** 状态标签：语义色只落在圆点与极淡的底色上，标签文字本身保持正文色。 */
+export function Badge(props: { kind?: 'ok' | 'warn' | 'err' | 'info' | 'muted'; children: any; mono?: boolean }): any {
+  const kind = props.kind ?? 'muted';
+  return h(
+    'span',
+    { className: `dshgt-badge dshgt-badge-${kind}${props.mono === true ? ' dshgt-mono' : ''}` },
+    h('span', { className: 'dshgt-badge-dot' }),
+    props.children,
+  );
+}
+
+/** 概览数字：一个标签、一个大数字、一句注脚；数字用等宽等宽数字避免跳动。 */
+export function Stat(props: {
+  label: string;
+  value: string;
+  note?: string;
+  tone?: 'ok' | 'warn';
+  className?: string;
+}): any {
+  const tone = props.tone === undefined ? '' : ` dshgt-stat-${props.tone}`;
+  const extra = props.className === undefined ? '' : ` ${props.className}`;
+  return h(
+    'div',
+    { className: `dshgt-stat${tone}${extra}` },
+    h('span', { className: 'dshgt-stat-k' }, props.label),
+    h('span', { className: 'dshgt-stat-v' }, props.value),
+    props.note === undefined ? null : h('span', { className: 'dshgt-stat-note' }, props.note),
+  );
+}
+
+/** 折叠面板：用原生 `<details>`，键盘与读屏天然可达，不额外管理展开状态。 */
+export function Disclosure(props: { summary: any; children: any; open?: boolean; className?: string }): any {
+  return h(
+    'details',
+    {
+      className: `dshgt-disclosure${props.className === undefined ? '' : ` ${props.className}`}`,
+      ...(props.open === true ? { open: true } : {}),
+    },
+    h('summary', { className: 'dshgt-disclosure-summary' }, props.summary),
+    h('div', { className: 'dshgt-disclosure-body' }, props.children),
+  );
+}
+
 export function Toggle(props: { checked: boolean; onChange: (next: boolean) => void; label?: string }): any {
   return h(
     'label',
